@@ -13,6 +13,7 @@
 스키마는 deploy/schema.sql 참고.
 """
 from __future__ import annotations
+import hashlib
 import json
 import os
 import threading
@@ -25,6 +26,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _DATA = os.path.join(_HERE, "..", "data")
 _PROFILE_JSON = os.path.join(_DATA, "profiles.json")
 _CHAT_JSON = os.path.join(_DATA, "chat_logs.json")
+_USERS_JSON = os.path.join(_DATA, "users.json")   # 파일 폴백용 계정(이름→해시)
 
 _USE_MYSQL = os.environ.get("USE_MYSQL", "0") not in ("0", "", "false", "False")
 _lock = threading.Lock()
@@ -80,6 +82,91 @@ def _load_json(path: str) -> dict:
 def _save_json(path: str, data: dict):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     json.dump(data, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+
+
+# ── 비밀번호 해시(표준 라이브러리 pbkdf2) ────────────────────────────
+def _hash_pw(password: str, salt: bytes | None = None) -> str:
+    """salt 와 pbkdf2-sha256 으로 비밀번호를 해시한다(평문 저장 금지)."""
+    salt = salt or os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+    return salt.hex() + "$" + dk.hex()
+
+
+def _verify_pw(password: str, stored: str | None) -> bool:
+    if not stored or "$" not in stored:
+        return False
+    try:
+        salt_hex, dk_hex = stored.split("$", 1)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
+                                 bytes.fromhex(salt_hex), 100_000)
+        return dk.hex() == dk_hex
+    except Exception:                            # noqa: BLE001
+        return False
+
+
+# ── 계정(회원가입·로그인) ─────────────────────────────────────────────
+def signup(name: str, password: str):
+    """새 계정 생성. (ok, msg)."""
+    if not name or not password:
+        return False, "성함과 비밀번호를 입력해 주세요."
+    if len(password) < 4:
+        return False, "비밀번호는 4자 이상이어야 합니다."
+    pw = _hash_pw(password)
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute("SELECT id, pw_hash FROM users WHERE name=%s", (name,))
+                    row = cur.fetchone()
+                    if row and row["pw_hash"]:
+                        return False, "이미 있는 계정입니다. 로그인해 주세요."
+                    if row:                       # 레거시(비번 없는) 계정 → 비번 설정
+                        cur.execute("UPDATE users SET pw_hash=%s WHERE id=%s",
+                                    (pw, row["id"]))
+                    else:
+                        cur.execute("INSERT INTO users (name, pw_hash) VALUES (%s,%s)",
+                                    (name, pw))
+                return True, "회원가입 완료"
+            finally:
+                c.close()
+        users = _load_json(_USERS_JSON)
+        if name in users and users[name]:
+            return False, "이미 있는 계정입니다. 로그인해 주세요."
+        users[name] = pw
+        _save_json(_USERS_JSON, users)
+        return True, "회원가입 완료"
+
+
+def login_check(name: str, password: str):
+    """로그인 검증. (ok, msg). 계정 없으면 회원가입 유도."""
+    if not name or not password:
+        return False, "성함과 비밀번호를 입력해 주세요."
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute("SELECT pw_hash FROM users WHERE name=%s", (name,))
+                    row = cur.fetchone()
+                    if not row:
+                        return False, "계정이 없습니다. 회원가입을 해 주세요."
+                    if not row["pw_hash"]:        # 레거시 계정: 비번 없음 → 통과
+                        return True, "로그인(비밀번호 미설정 계정)"
+                    return (_verify_pw(password, row["pw_hash"]),
+                            "로그인 완료" if _verify_pw(password, row["pw_hash"])
+                            else "비밀번호가 올바르지 않습니다.")
+            finally:
+                c.close()
+        users = _load_json(_USERS_JSON)
+        if name not in users:
+            return False, "계정이 없습니다. 회원가입을 해 주세요."
+        stored = users[name]
+        if not stored:
+            return True, "로그인(비밀번호 미설정 계정)"
+        return (_verify_pw(password, stored),
+                "로그인 완료" if _verify_pw(password, stored)
+                else "비밀번호가 올바르지 않습니다.")
 
 
 # ── 공개 API (앱이 쓰는 함수) ─────────────────────────────────────────

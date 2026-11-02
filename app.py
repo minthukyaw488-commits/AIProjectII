@@ -455,23 +455,46 @@ def login_screen():
         '<span style="display:inline-block;margin-top:15px;font-size:12.5px;font-weight:800;color:#2f6bff;'
         'background:#f5f8fd;padding:6px 14px;border-radius:999px">1단계 · 로그인</span>'
         '</div>', unsafe_allow_html=True)
-    st.caption("성함을 입력하시면 시작합니다. (프로토타입 — 실제 서비스에서는 본인 인증·동의가 필요합니다)")
-    name = st.text_input("성함", placeholder="예: 홍길동")
-    if st.button("시작하기", type="primary", use_container_width=True):
-        if name.strip():
-            st.session_state["auth_user"] = name.strip()
-            # 저장된 프로필이 있으면 불러오기 (MySQL 또는 파일)
-            try:
-                from src import db
-                prof = db.get_profile(name.strip())
-                if prof:
-                    st.session_state["profile"] = prof
-                    st.session_state["profile_done"] = True
-            except Exception:
-                pass
-            st.rerun()
-        else:
-            st.warning("성함을 입력해 주세요.")
+    from src import db
+
+    def _enter(name: str):
+        """로그인 성공 처리: 세션 설정 + 저장된 프로필 불러오기."""
+        st.session_state["auth_user"] = name
+        try:
+            prof = db.get_profile(name)
+            if prof:
+                st.session_state["profile"] = prof
+                st.session_state["profile_done"] = True
+        except Exception:
+            pass
+        st.rerun()
+
+    tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
+    with tab_login:
+        name = st.text_input("성함", key="li_name", placeholder="예: 홍길동")
+        pw = st.text_input("비밀번호", key="li_pw", type="password")
+        if st.button("로그인", type="primary", use_container_width=True):
+            ok, msg = db.login_check(name.strip(), pw)
+            if ok:
+                _enter(name.strip())
+            else:
+                st.warning(msg)
+    with tab_signup:
+        st.caption("처음이시면 계정을 만들어 주세요. (비밀번호 4자 이상)")
+        n2 = st.text_input("성함", key="su_name", placeholder="예: 홍길동")
+        p2 = st.text_input("비밀번호", key="su_pw", type="password")
+        p3 = st.text_input("비밀번호 확인", key="su_pw2", type="password")
+        if st.button("회원가입", type="primary", use_container_width=True):
+            if p2 != p3:
+                st.warning("비밀번호가 서로 다릅니다.")
+            else:
+                ok, msg = db.signup(n2.strip(), p2)
+                if ok:
+                    st.success(msg + " — 바로 시작합니다.")
+                    _enter(n2.strip())
+                else:
+                    st.warning(msg)
+    st.caption("※ 프로토타입 — 실제 서비스에서는 본인 인증·개인정보 동의가 필요합니다.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 
