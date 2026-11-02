@@ -396,6 +396,14 @@ def ask_text(client, q: str):
         st.error(r["error"]); return
     r["question"] = q   # 화면에는 원래 질문만 보이게
     _store(r)
+    # 대화 기록 저장(MySQL 또는 파일)
+    try:
+        from src import db
+        u = st.session_state.get("auth_user")
+        if u:
+            db.save_chat(u, q, r.get("answer", ""), [])
+    except Exception:
+        pass
 
 
 def ask_audio(client, wav: bytes):
@@ -452,13 +460,12 @@ def login_screen():
     if st.button("시작하기", type="primary", use_container_width=True):
         if name.strip():
             st.session_state["auth_user"] = name.strip()
-            # 저장된 프로필이 있으면 불러오기
+            # 저장된 프로필이 있으면 불러오기 (MySQL 또는 파일)
             try:
-                import json
-                import os
-                store = json.load(open(os.path.join("data", "profiles.json"), encoding="utf-8"))
-                if name.strip() in store:
-                    st.session_state["profile"] = store[name.strip()]
+                from src import db
+                prof = db.get_profile(name.strip())
+                if prof:
+                    st.session_state["profile"] = prof
                     st.session_state["profile_done"] = True
             except Exception:
                 pass
@@ -508,20 +515,10 @@ def profile_screen():
                 "mobility_issue": tri[mob], "chronic_illness": tri[ill]}
         st.session_state["profile"] = prof
         st.session_state["profile_done"] = True
-        # 로컬 저장(민감정보 — git 제외)
+        # 저장(MySQL 또는 파일 — 민감정보라 json 산출물은 .gitignore)
         try:
-            import json
-            import os
-            os.makedirs("data", exist_ok=True)
-            path = os.path.join("data", "profiles.json")
-            store = {}
-            try:
-                store = json.load(open(path, encoding="utf-8"))
-            except Exception:
-                store = {}
-            store[user] = prof
-            json.dump(store, open(path, "w", encoding="utf-8"),
-                      ensure_ascii=False, indent=2)
+            from src import db
+            db.save_profile(user, prof)
         except Exception:
             pass
         st.rerun()
