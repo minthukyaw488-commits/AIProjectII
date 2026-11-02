@@ -28,25 +28,13 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from src.welfare_rules import Profile, recommend
+from src import db   # 저장소 계층(MySQL 또는 파일 폴백)
 
 app = FastAPI(title="대전노인복지 HUB — 맞춤 상담")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-STORE = os.path.join(HERE, "data", "profiles.json")
 EVIDENCE_K = int(os.environ.get("RAG_EVIDENCE_K", "3"))
 EVIDENCE_MIN_SIM = float(os.environ.get("RAG_EVIDENCE_MIN_SIM", "0.62"))
-
-# ── 아주 단순한 계정 저장소(이름 → 프로필) ──────────────────────────
-def _load_store() -> dict:
-    try:
-        return json.load(open(STORE, encoding="utf-8"))
-    except Exception:                      # noqa: BLE001
-        return {}
-
-
-def _save_store(d: dict):
-    os.makedirs(os.path.dirname(STORE), exist_ok=True)
-    json.dump(d, open(STORE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
 
 # ── RAG(rag_lecture/ask.py) 지연 로드 ──────────────────────────────
@@ -125,9 +113,9 @@ def login(inp: LoginIn):
     name = (inp.name or "").strip()
     if not name:
         return {"ok": False, "msg": "성함을 입력해 주세요."}
-    store = _load_store()
-    prof = store.get(name)
-    return {"ok": True, "name": name, "profile": prof, "is_new": prof is None}
+    prof = db.get_profile(name)
+    return {"ok": True, "name": name, "profile": prof, "is_new": prof is None,
+            "history": db.list_chats(name, limit=10)}
 
 
 @app.post("/profile")
@@ -138,9 +126,7 @@ def save_profile(p: ProfileIn):
         return {"ok": False, "msg": "성함을 입력해 주세요."}
     d = p.model_dump()
     d.pop("name")
-    store = _load_store()
-    store[name] = d
-    _save_store(store)
+    db.save_profile(name, d)
     return {"ok": True, "eligible": _eligible_names(d), "summary": _profile_text(d)}
 
 
@@ -151,8 +137,7 @@ def chat(c: ChatIn):
     q = (c.question or "").strip()
     if not q:
         return {"answer": "궁금한 점을 입력해 주세요.", "sources": []}
-    store = _load_store()
-    d = store.get(name) or {}
+    d = db.get_profile(name) or {}
     rag = _get_rag()
     if rag is None:
         return {"answer": "(상담 엔진이 준비되지 않았습니다 — 인덱스/Ollama 확인)",
@@ -180,7 +165,18 @@ def chat(c: ChatIn):
         return {"answer": f"(오류: {e}) Ollama 실행 여부를 확인하세요.", "sources": []}
     srcs = [{"source": s, "score": round(sim, 3)} for _, s, sim in hits
             if sim >= EVIDENCE_MIN_SIM]
+    if name:
+        try:
+            db.save_chat(name, q, answer, srcs)   # 대화 기록 저장(관계형 DB)
+        except Exception:                          # noqa: BLE001
+            pass
     return {"answer": answer, "sources": srcs}
+
+
+@app.get("/history/{name}")
+def history(name: str):
+    """사용자의 최근 대화 기록."""
+    return {"history": db.list_chats(name.strip(), limit=20)}
 
 
 PAGE = """<!doctype html>
