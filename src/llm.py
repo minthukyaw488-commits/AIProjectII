@@ -121,7 +121,12 @@ class LocalLLM:
         """Generate a completion. `num_predict`/`model`/`temperature` can be
         overridden (the agent uses a longer budget and its own model)."""
         if not self.available:
-            return self._fallback(prompt)
+            # 시작 시 Ollama가 꺼져 있었더라도, 이후 켜지면 자동 복구(재확인 1회).
+            # 스트림릿 워커는 시작할 때 한 번만 핑하므로, 이게 없으면 Ollama를
+            # 나중에 켜도 재시작 전까지 계속 '미실행'으로 나온다.
+            self.available = self._ping_and_pick(self.model)
+            if not self.available:
+                return self._fallback(prompt)
         payload = {
             "model": model or self.model,
             "prompt": prompt,
