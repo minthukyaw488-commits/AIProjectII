@@ -458,13 +458,25 @@ def login_screen():
     from src import db
 
     def _enter(name: str):
-        """로그인 성공 처리: 세션 설정 + 저장된 프로필 불러오기."""
+        """로그인 성공 처리: 세션 설정 + 저장된 프로필·지난 대화 불러오기."""
         st.session_state["auth_user"] = name
         try:
             prof = db.get_profile(name)
             if prof:
                 st.session_state["profile"] = prof
                 st.session_state["profile_done"] = True
+        except Exception:
+            pass
+        # 지난 대화 기록을 불러와 이어서 보여준다(대화 기억).
+        try:
+            hist = db.list_chats(name, limit=10)
+            chat = []
+            for h in hist:
+                if h.get("question"):
+                    chat.append(("user", h["question"]))
+                    chat.append(("bot", h.get("answer", ""), None))
+            if chat:
+                st.session_state["chat"] = chat
         except Exception:
             pass
         st.rerun()
