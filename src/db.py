@@ -261,3 +261,71 @@ def list_chats(name: str, limit: int = 20):
 
 def backend_name() -> str:
     return "mysql" if (_USE_MYSQL and _conn() is not None) else "file(json)"
+
+
+# ── 복지 카탈로그(복지 정보를 DB로 · Phase 4) ─────────────────────────
+_CATALOG_JSON = os.path.join(_DATA, "welfare_catalog.json")
+_CATALOG_COLS = ("name", "summary", "min_age", "need_income_low",
+                 "need_living_alone", "need_mobility", "need_illness",
+                 "verify_note")
+
+
+def seed_welfare(items: list[dict]):
+    """복지 목록을 카탈로그에 넣는다(참조 데이터라 통째로 재생성). items 는
+    welfare_rules 의 Welfare 를 dict 로 바꾼 것."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute("DROP TABLE IF EXISTS welfare_catalog")
+                    cur.execute(
+                        "CREATE TABLE welfare_catalog ("
+                        " id INT AUTO_INCREMENT PRIMARY KEY,"
+                        " name VARCHAR(120) NOT NULL,"
+                        " summary VARCHAR(255),"
+                        " min_age INT NULL,"
+                        " need_income_low TINYINT DEFAULT 0,"
+                        " need_living_alone TINYINT DEFAULT 0,"
+                        " need_mobility TINYINT DEFAULT 0,"
+                        " need_illness TINYINT DEFAULT 0,"
+                        " verify_note TEXT) ENGINE=InnoDB")
+                    for it in items:
+                        cur.execute(
+                            "INSERT INTO welfare_catalog "
+                            "(name, summary, min_age, need_income_low, "
+                            " need_living_alone, need_mobility, need_illness, "
+                            " verify_note) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                            (it["name"], it["summary"], it["min_age"],
+                             int(it["need_income_low"]), int(it["need_living_alone"]),
+                             int(it["need_mobility"]), int(it["need_illness"]),
+                             it["verify_note"]))
+                return len(items)
+            finally:
+                c.close()
+        _save_json(_CATALOG_JSON, {"items": items})
+        return len(items)
+
+
+def list_welfare() -> list[dict]:
+    """카탈로그의 복지 목록. 비어 있으면 빈 리스트(→ 코드 기본표 사용)."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute(
+                        "SELECT name, summary, min_age, need_income_low, "
+                        "need_living_alone, need_mobility, need_illness, verify_note "
+                        "FROM welfare_catalog ORDER BY id")
+                    rows = cur.fetchall()
+                    for r in rows:
+                        for k in ("need_income_low", "need_living_alone",
+                                  "need_mobility", "need_illness"):
+                            r[k] = bool(r[k])
+                    return rows
+            except Exception:                    # noqa: BLE001 (테이블 없음 등)
+                return []
+            finally:
+                c.close()
+        return _load_json(_CATALOG_JSON).get("items", [])

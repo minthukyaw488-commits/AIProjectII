@@ -104,6 +104,38 @@ WELFARE_TABLE: list[Welfare] = [
 ]
 
 
+def to_dict(w: Welfare) -> dict:
+    """카탈로그(DB) 저장용 — 매칭에 쓰는 핵심 필드만."""
+    return {"name": w.name, "summary": w.summary, "min_age": w.min_age,
+            "need_income_low": w.need_income_low,
+            "need_living_alone": w.need_living_alone,
+            "need_mobility": w.need_mobility, "need_illness": w.need_illness,
+            "verify_note": w.verify_note}
+
+
+def _from_row(r: dict) -> Welfare:
+    return Welfare(
+        name=r["name"], summary=r.get("summary", ""), min_age=r.get("min_age"),
+        need_income_low=bool(r.get("need_income_low")),
+        need_living_alone=bool(r.get("need_living_alone")),
+        need_mobility=bool(r.get("need_mobility")),
+        need_illness=bool(r.get("need_illness")),
+        verify_note=r.get("verify_note") or "")
+
+
+def get_welfare_table() -> list[Welfare]:
+    """복지 규칙표를 돌려준다. DB 카탈로그에 내용이 있으면 그걸 쓰고(Phase 4),
+    없으면 코드 기본표(WELFARE_TABLE)로 폴백한다."""
+    try:
+        from src import db
+        rows = db.list_welfare()
+        if rows:
+            return [_from_row(r) for r in rows]
+    except Exception:                            # noqa: BLE001
+        pass
+    return WELFARE_TABLE
+
+
 @dataclass
 class MatchResult:
     welfare: Welfare
@@ -170,12 +202,15 @@ def _check_one(p: Profile, w: Welfare) -> MatchResult:
     return MatchResult(w, status, reasons)
 
 
-def match_profile(p: Profile, table: list[Welfare] = WELFARE_TABLE) -> list[MatchResult]:
-    """프로필을 전체 복지 표와 대조해 결과 리스트 반환."""
+def match_profile(p: Profile, table: list[Welfare] | None = None) -> list[MatchResult]:
+    """프로필을 전체 복지 표와 대조해 결과 리스트 반환.
+    table 을 안 주면 DB 카탈로그(있으면)·기본표를 자동 선택한다."""
+    if table is None:
+        table = get_welfare_table()
     return [_check_one(p, w) for w in table]
 
 
-def recommend(p: Profile, table: list[Welfare] = WELFARE_TABLE):
+def recommend(p: Profile, table: list[Welfare] | None = None):
     """상태별로 묶어 돌려준다: (받을 수 있음, 확인 필요, 해당 없음)."""
     res = match_profile(p, table)
     eligible = [r for r in res if r.status == "eligible"]

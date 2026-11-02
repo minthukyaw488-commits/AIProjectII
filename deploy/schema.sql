@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS chat_logs (
   INDEX idx_user_time (user_id, created_at)
 ) ENGINE=InnoDB;
 
--- 4) 복지 카탈로그(선택 · Phase 4) — 복지 정보를 DB로
+-- 4) 복지 카탈로그(Phase 4) — 복지 정보를 DB로. src.seed_welfare 로 채운다.
+--    (시딩 시 통째로 재생성되므로 컬럼은 거기서도 보장됨)
 CREATE TABLE IF NOT EXISTS welfare_catalog (
   id         INT AUTO_INCREMENT PRIMARY KEY,
   name       VARCHAR(120) NOT NULL,
@@ -54,5 +55,6 @@ CREATE TABLE IF NOT EXISTS welfare_catalog (
   need_income_low   TINYINT DEFAULT 0,
   need_living_alone TINYINT DEFAULT 0,
   need_mobility     TINYINT DEFAULT 0,
-  agency     VARCHAR(255) NULL                  -- 수행기관
+  need_illness      TINYINT DEFAULT 0,
+  verify_note       TEXT NULL
 ) ENGINE=InnoDB;
