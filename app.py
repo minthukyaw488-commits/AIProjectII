@@ -320,6 +320,40 @@ def inject_css():
           min-height:48px !important; font-size:1.05rem !important}}
         .chip{{padding:12px 18px}}
       }}
+
+      /* ---- professional polish (desktop + phone) ----------------------- */
+      html{{scroll-behavior:smooth}}
+      [id]{{scroll-margin-top:72px}}
+      /* labeled assistant bubble (ChatGPT-style header on each AI reply) */
+      .bub.bot{{position:relative}}
+      .bub.bot::before{{content:"복지 도우미"; display:block; font-size:.72rem;
+        font-weight:800; color:{accent}; letter-spacing:.01em; margin:0 0 4px}}
+      /* tactile press feedback — feels like a native app */
+      .cat-card:active{{transform:scale(.97)}}
+      div[data-testid="stButton"] > button:active{{transform:translateY(0) scale(.98)}}
+      .chip:active{{transform:scale(.96)}}
+
+      /* ---- fixed bottom tab bar (phone only; injected into parent body) - */
+      .tabbar{{display:none}}
+      @media(max-width:640px){{
+        .tabbar{{display:flex; position:fixed; left:0; right:0; bottom:0; z-index:9999;
+          background:rgba(255,255,255,.97); backdrop-filter:saturate(1.3) blur(12px);
+          border-top:1px solid {line};
+          padding:7px 4px calc(7px + env(safe-area-inset-bottom))}}
+        .tabbar button{{flex:1; background:none; border:0; cursor:pointer;
+          display:flex; flex-direction:column; align-items:center; gap:3px;
+          padding:5px 0; color:#8493ac; font-weight:700; font-family:inherit;
+          transition:color .15s, transform .12s}}
+        .tabbar button .ic{{font-size:1.32rem; line-height:1}}
+        .tabbar button .lb{{font-size:.72rem; letter-spacing:-.02em}}
+        .tabbar button.on{{color:{accent}}}
+        .tabbar button:active{{transform:scale(.9)}}
+        .block-container{{padding-bottom:86px !important}}
+        /* cleaner app-bar on phone + hide desktop utility clutter */
+        .gnav{{box-shadow:0 2px 14px -8px rgba(16,35,61,.35)}}
+        .util{{display:none}}
+        .bub.bot::before{{font-size:.68rem}}
+      }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -355,6 +389,60 @@ def inject_pwa():
             add('meta', {name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent'});
             add('meta', {name: 'apple-mobile-web-app-title', content: '복지 도우미'});
             add('meta', {name: 'theme-color', content: '#0f2f6f'});
+            // iPhone safe-area: let content reach the edges so env(safe-area-*) works
+            var vp = window.parent.document.querySelector('meta[name="viewport"]');
+            if (vp && vp.content.indexOf('viewport-fit') === -1) {
+              vp.content += ', viewport-fit=cover';
+            }
+          } catch (e) { /* cross-origin or restricted: silently skip */ }
+        })();
+        </script>
+        """,
+        height=0,
+    )
+
+
+def inject_bottom_nav():
+    """Fixed bottom tab bar (phone only) for a native-app feel.
+
+    Injected into the PARENT document (like the PWA tags) so it floats over the
+    Streamlit page; taps smooth-scroll to section ids (#home, #mywelfare, #talk,
+    #services). Pure navigation — no data leaves the device. Hidden on desktop
+    via the .tabbar CSS media query. Degrades silently if injection is blocked.
+    """
+    import streamlit.components.v1 as components
+    components.html(
+        """
+        <script>
+        (function () {
+          try {
+            var doc = window.parent.document;
+            if (doc.getElementById('ht-tabbar')) return;     // inject once
+            var items = [
+              ['home',      '\\uD83C\\uDFE0', '\\uD648'],                 // 홈
+              ['mywelfare', '\\u2728',        '\\uB9DE\\uCDA4\\uBCF5\\uC9C0'],   // 맞춤복지
+              ['talk',      '\\uD83D\\uDCAC', 'AI\\uC0C1\\uB2F4'],              // AI상담
+              ['services',  '\\uD83D\\uDCCB', '\\uC11C\\uBE44\\uC2A4']          // 서비스
+            ];
+            var nav = doc.createElement('nav');
+            nav.id = 'ht-tabbar';
+            nav.className = 'tabbar';
+            nav.setAttribute('role', 'navigation');
+            nav.innerHTML = items.map(function (it) {
+              return '<button data-t="' + it[0] + '" aria-label="' + it[2] + '">' +
+                     '<span class="ic">' + it[1] + '</span>' +
+                     '<span class="lb">' + it[2] + '</span></button>';
+            }).join('');
+            doc.body.appendChild(nav);
+            nav.addEventListener('click', function (e) {
+              var b = e.target.closest('button'); if (!b) return;
+              var el = doc.getElementById(b.getAttribute('data-t'));
+              if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});
+              Array.prototype.forEach.call(nav.children, function (c) {
+                c.classList.remove('on');
+              });
+              b.classList.add('on');
+            });
           } catch (e) { /* cross-origin or restricted: silently skip */ }
         })();
         </script>
@@ -622,7 +710,7 @@ def my_welfare_cards():
         maybe_html = ('<p class="sub" style="margin-top:22px">확인하면 받으실 수 있어요</p>'
                       f'<div class="chips">{chips}</div>')
     st.markdown(
-        '<div class="sec"><div class="gov-wrap">'
+        '<div class="sec" id="mywelfare"><div class="gov-wrap">'
         f'<h2>{user} 님 맞춤 복지</h2>'
         f'<p class="sub">입력하신 정보({_profile_summary(p)})로 받으실 수 있는 복지입니다. '
         '카드를 누르면 자세히 안내해 드려요. · 정확한 기준은 주민센터 확인</p>'
@@ -787,7 +875,7 @@ def hero(client):
            '<path d="M40 150c30-10 60-10 90 0" stroke-opacity=".35"/>'
            '<path d="M30 170c40-14 90-14 130 0" stroke-opacity=".25"/></svg></div>')
     st.markdown(f"""
-    <div class="hero"><div class="gov-wrap"><div class="hero-inner">
+    <div class="hero" id="home"><div class="gov-wrap"><div class="hero-inner">
       {art}
       <span class="eyebrow">대전광역시 · 어르신 복지</span>
       <h1>어르신, 무엇을 도와드릴까요?</h1>
@@ -795,7 +883,7 @@ def hero(client):
     </div></div></div>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="gov-wrap sec">', unsafe_allow_html=True)
+    st.markdown('<div class="gov-wrap sec" id="talk">', unsafe_allow_html=True)
     st.markdown('<div class="ai-head">음성·문자 복지 상담 (AI 도우미)</div>',
                 unsafe_allow_html=True)
     st.session_state["use_rag"] = True   # 항상 RAG 사용(문서 근거)
@@ -823,7 +911,7 @@ def category_cards(client):
             f'<span class="cat-name">{name}</span>'
             f'<span class="cat-desc">{desc}</span>'
             f'<span class="arw">→</span></a>')
-    st.markdown('<div class="sec alt"><div class="gov-wrap">'
+    st.markdown('<div class="sec alt" id="services"><div class="gov-wrap">'
                 '<h2>복지 서비스 바로가기</h2>'
                 '<p class="sub">필요하신 서비스를 선택하시면 AI 도우미가 안내해 드립니다.</p>'
                 f'<div class="cat-grid">{cards}</div>'
@@ -1112,6 +1200,7 @@ def main():
         voice_conversation(client)   # hands-free ChatGPT-style voice loop
     else:
         header_nav(client)
+        inject_bottom_nav()      # 폰 하단 탭바(홈·맞춤복지·AI상담·서비스)
         # Container ordering: the hero holds a blocking voice loop, so render the
         # sections BELOW it first (into a later container), then fill the hero.
         hero_c = st.container()
