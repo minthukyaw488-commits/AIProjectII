@@ -334,36 +334,51 @@ def inject_css():
       div[data-testid="stButton"] > button:active{{transform:translateY(0) scale(.98)}}
       .chip:active{{transform:scale(.96)}}
 
-      /* ---- app bottom tab bar (real Streamlit buttons, fixed) ---------- */
+      /* ---- app bottom tab bar — LinkedIn-style compact icon+label row --- */
       .st-key-htnav{{position:fixed; left:50%; transform:translateX(-50%); bottom:16px;
-        width:min(460px,94vw); z-index:9999; background:rgba(255,255,255,.98);
+        width:min(440px,92vw); z-index:9999; background:rgba(255,255,255,.98);
         backdrop-filter:saturate(1.3) blur(12px); border:1px solid {line};
-        border-radius:22px; box-shadow:0 16px 44px -16px rgba(16,35,61,.42);
-        padding:6px 8px}}
-      .st-key-htnav [data-testid="stHorizontalBlock"]{{gap:4px}}
+        border-radius:20px; box-shadow:0 14px 40px -16px rgba(16,35,61,.4);
+        padding:3px 6px}}
+      /* keep all 4 tabs on ONE horizontal row even on a phone (Streamlit would
+         otherwise stack the columns vertically on narrow widths) */
+      .st-key-htnav [data-testid="stHorizontalBlock"]{{gap:2px !important;
+        flex-wrap:nowrap !important}}
+      .st-key-htnav [data-testid="stColumn"]{{min-width:0 !important;
+        width:auto !important; flex:1 1 0 !important}}
+      /* each tab: emoji icon stacked OVER the label, flat + compact */
       .st-key-htnav div[data-testid="stButton"] > button{{
-        border:0 !important; background:transparent !important; background-image:none !important;
-        box-shadow:none !important; color:#8493ac !important; font-weight:700 !important;
-        font-size:.86rem !important; letter-spacing:-.02em; padding:.55rem .15rem !important;
-        border-radius:14px !important; min-height:0 !important; transform:none !important}}
+        display:flex !important; flex-direction:column !important; align-items:center !important;
+        gap:0 !important; border:0 !important; background:transparent !important;
+        background-image:none !important; box-shadow:none !important;
+        color:#8493ac !important; font-weight:600 !important; font-size:.68rem !important;
+        letter-spacing:-.03em; white-space:nowrap; padding:.3rem .1rem !important;
+        border-radius:12px !important; min-height:0 !important; line-height:1.15 !important;
+        transform:none !important}}
+      .st-key-htnav div[data-testid="stButton"] > button::before{{
+        font-size:1.24rem; line-height:1; margin-bottom:2px}}
+      .st-key-nav_home button::before{{content:"🏠"}}
+      .st-key-nav_mywelfare button::before{{content:"✨"}}
+      .st-key-nav_talk button::before{{content:"💬"}}
+      .st-key-nav_services button::before{{content:"📋"}}
       .st-key-htnav div[data-testid="stButton"] > button:hover{{
         color:{navy} !important; background:{surface2} !important; transform:none !important}}
-      /* active tab (rendered as a primary button) — selector must out-rank the
-         general button rule above, so keep the same path + a kind qualifier */
+      /* active tab (primary) — just a colour highlight, must out-rank the base */
       .st-key-htnav div[data-testid="stButton"] > button[kind="primary"],
       .st-key-htnav div[data-testid="stButton"] > button[data-testid*="primary"]{{
-        background:{accent}14 !important; background-image:none !important;
+        background:transparent !important; background-image:none !important;
         color:{accent} !important; box-shadow:none !important; font-weight:800 !important;
         transform:none !important}}
-      .block-container{{padding-bottom:104px !important}}
+      .block-container{{padding-bottom:92px !important}}
       @media(max-width:640px){{
-        /* full-width bottom bar on phone, hugging the home indicator */
+        /* full-width slim bottom bar on phone, hugging the home indicator */
         .st-key-htnav{{left:0; right:0; transform:none; bottom:0; width:auto;
-          border-radius:18px 18px 0 0; border-bottom:0;
-          padding:6px 6px calc(6px + env(safe-area-inset-bottom))}}
+          border-radius:16px 16px 0 0; border-bottom:0; padding:3px 4px;
+          padding-bottom:calc(3px + env(safe-area-inset-bottom))}}
         .st-key-htnav div[data-testid="stButton"] > button{{
-          font-size:.8rem !important; padding:.5rem .1rem !important}}
-        .block-container{{padding-bottom:88px !important}}
+          font-size:.66rem !important; padding:.26rem .05rem !important}}
+        .st-key-htnav div[data-testid="stButton"] > button::before{{font-size:1.3rem}}
+        .block-container{{padding-bottom:70px !important}}
         .gnav{{box-shadow:0 2px 14px -8px rgba(16,35,61,.35)}}
         .util{{display:none}}
         .bub.bot::before{{font-size:.68rem}}
@@ -423,8 +438,9 @@ def bottom_tab_bar(active="home"):
     a full-width bar on phone). The active tab is drawn as a primary button.
     Robust by design — no JavaScript bridge — so a tap always switches screens.
     """
-    tabs = [("home", "🏠 홈"), ("mywelfare", "✨ 맞춤복지"),
-            ("talk", "💬 AI상담"), ("services", "📋 서비스")]
+    # 아이콘은 CSS(::before)가 넣으므로 라벨은 텍스트만 — 아이콘 위, 글자 아래로 쌓인다
+    tabs = [("home", "홈"), ("mywelfare", "맞춤복지"),
+            ("talk", "AI상담"), ("services", "서비스")]
     with st.container(key="htnav"):
         cols = st.columns(4)
         for col, (tab, label) in zip(cols, tabs):
