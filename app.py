@@ -672,7 +672,16 @@ def voice_orb(client):
         from streamlit_webrtc import WebRtcMode, webrtc_streamer
         from src.vad_stream import UtteranceSegmenter
     except Exception:
-        st.info("음성 대화 기능: pip install streamlit-webrtc webrtcvad 'setuptools<81'")
+        # 음성 패키지가 없거나(서버) HTTPS가 아니면 음성은 못 쓴다. 하지만 문자
+        # 대화는 보여야 하므로, 채팅 내역을 렌더하고 돌아간다(답변이 안 보이던 버그).
+        st.caption("💬 글로 입력해 상담하세요. (음성은 패키지·HTTPS 환경에서 지원)")
+        import html as _html
+        rows = ""
+        for m in st.session_state.get("chat", [])[-8:]:
+            side, who = ("r", "user") if m[0] == "user" else ("l", "bot")
+            rows += (f'<div class="row {side}"><div class="bub {who}">'
+                     f'{_html.escape(m[1])}</div></div>')
+        st.markdown(f'<div class="chat">{rows}</div>', unsafe_allow_html=True)
         return
 
     class VP:
