@@ -378,7 +378,24 @@ def _store(r: dict):
     st.session_state["state"] = r
 
 
+_GREETINGS = {"안녕", "안녕하세요", "안녕하십니까", "하이", "헬로", "반가워요",
+              "반갑습니다", "고마워요", "고맙습니다", "감사합니다", "감사해요",
+              "잘있어요", "수고하세요", "좋은아침", "좋은하루"}
+
+
 def ask_text(client, q: str):
+    # 인사·짧은 일상 대화는 RAG 없이 짧게 인사로만 답한다(복지 나열 방지).
+    if q.replace(" ", "").rstrip("!?.~ ") in _GREETINGS:
+        u = st.session_state.get("auth_user", "어르신")
+        ans = f"안녕하세요, {u} 님 😊 궁금하신 복지를 편하게 물어보세요."
+        _store({"question": q, "answer": ans})
+        try:
+            from src import db
+            if st.session_state.get("auth_user"):
+                db.save_chat(st.session_state["auth_user"], q, ans, [])
+        except Exception:
+            pass
+        return
     # 맞춤형: 내 정보가 있으면 질문에 짧은 프로필 메모를 덧붙여, 그 사람 상황에
     # 맞춘 답변을 유도한다(정보가 없으면 질문 그대로 — 기존 동작과 동일).
     p = st.session_state.get("profile", {})

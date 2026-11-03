@@ -103,7 +103,9 @@ class WelfareAssistant:
             return OFF_DOMAIN_REPLY, []               # not covered / off-topic
         contexts = [r.text for r in retrieved]
         prompt = build_answer_prompt(question, contexts)
-        answer = self.llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT)
+        # 답변이 중간에 끊기지 않도록 생성 토큰 여유를 둔다(기본 130 → 256).
+        answer = self.llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT,
+                                   num_predict=256)
         return answer, [r.source for r in retrieved]
 
     def _smalltalk_reply(self, question: str) -> str:
