@@ -254,6 +254,7 @@ def inject_css():
       .chips{{display:flex; flex-wrap:wrap; gap:11px}}
       .chip{{background:{surface}; border:1px solid {card_bd}; border-radius:999px;
         padding:11px 20px; font-weight:600; color:{navy}; font-size:1.02rem;
+        text-decoration:none; display:inline-block;
         box-shadow:0 1px 2px rgba(16,35,61,.04); transition:all .15s}}
       .chip:hover{{border-color:{accent}; color:{accent}; transform:translateY(-2px)}}
 
@@ -333,23 +334,36 @@ def inject_css():
       div[data-testid="stButton"] > button:active{{transform:translateY(0) scale(.98)}}
       .chip:active{{transform:scale(.96)}}
 
-      /* ---- fixed bottom tab bar (phone only; injected into parent body) - */
-      .tabbar{{display:none}}
+      /* ---- app bottom tab bar (real Streamlit buttons, fixed) ---------- */
+      .st-key-htnav{{position:fixed; left:50%; transform:translateX(-50%); bottom:16px;
+        width:min(460px,94vw); z-index:9999; background:rgba(255,255,255,.98);
+        backdrop-filter:saturate(1.3) blur(12px); border:1px solid {line};
+        border-radius:22px; box-shadow:0 16px 44px -16px rgba(16,35,61,.42);
+        padding:6px 8px}}
+      .st-key-htnav [data-testid="stHorizontalBlock"]{{gap:4px}}
+      .st-key-htnav div[data-testid="stButton"] > button{{
+        border:0 !important; background:transparent !important; background-image:none !important;
+        box-shadow:none !important; color:#8493ac !important; font-weight:700 !important;
+        font-size:.86rem !important; letter-spacing:-.02em; padding:.55rem .15rem !important;
+        border-radius:14px !important; min-height:0 !important; transform:none !important}}
+      .st-key-htnav div[data-testid="stButton"] > button:hover{{
+        color:{navy} !important; background:{surface2} !important; transform:none !important}}
+      /* active tab (rendered as a primary button) — selector must out-rank the
+         general button rule above, so keep the same path + a kind qualifier */
+      .st-key-htnav div[data-testid="stButton"] > button[kind="primary"],
+      .st-key-htnav div[data-testid="stButton"] > button[data-testid*="primary"]{{
+        background:{accent}14 !important; background-image:none !important;
+        color:{accent} !important; box-shadow:none !important; font-weight:800 !important;
+        transform:none !important}}
+      .block-container{{padding-bottom:104px !important}}
       @media(max-width:640px){{
-        .tabbar{{display:flex; position:fixed; left:0; right:0; bottom:0; z-index:9999;
-          background:rgba(255,255,255,.97); backdrop-filter:saturate(1.3) blur(12px);
-          border-top:1px solid {line};
-          padding:7px 4px calc(7px + env(safe-area-inset-bottom))}}
-        .tabbar button{{flex:1; background:none; border:0; cursor:pointer;
-          display:flex; flex-direction:column; align-items:center; gap:3px;
-          padding:5px 0; color:#8493ac; font-weight:700; font-family:inherit;
-          transition:color .15s, transform .12s}}
-        .tabbar button .ic{{font-size:1.32rem; line-height:1}}
-        .tabbar button .lb{{font-size:.72rem; letter-spacing:-.02em}}
-        .tabbar button.on{{color:{accent}}}
-        .tabbar button:active{{transform:scale(.9)}}
-        .block-container{{padding-bottom:86px !important}}
-        /* cleaner app-bar on phone + hide desktop utility clutter */
+        /* full-width bottom bar on phone, hugging the home indicator */
+        .st-key-htnav{{left:0; right:0; transform:none; bottom:0; width:auto;
+          border-radius:18px 18px 0 0; border-bottom:0;
+          padding:6px 6px calc(6px + env(safe-area-inset-bottom))}}
+        .st-key-htnav div[data-testid="stButton"] > button{{
+          font-size:.8rem !important; padding:.5rem .1rem !important}}
+        .block-container{{padding-bottom:88px !important}}
         .gnav{{box-shadow:0 2px 14px -8px rgba(16,35,61,.35)}}
         .util{{display:none}}
         .bub.bot::before{{font-size:.68rem}}
@@ -402,53 +416,22 @@ def inject_pwa():
     )
 
 
-def inject_bottom_nav():
-    """Fixed bottom tab bar (phone only) for a native-app feel.
+def bottom_tab_bar(active="home"):
+    """Native-style bottom tab bar made of real Streamlit buttons.
 
-    Injected into the PARENT document (like the PWA tags) so it floats over the
-    Streamlit page; taps smooth-scroll to section ids (#home, #mywelfare, #talk,
-    #services). Pure navigation — no data leaves the device. Hidden on desktop
-    via the .tabbar CSS media query. Degrades silently if injection is blocked.
+    Fixed to the bottom via the `.st-key-htnav` CSS (a floating pill on desktop,
+    a full-width bar on phone). The active tab is drawn as a primary button.
+    Robust by design — no JavaScript bridge — so a tap always switches screens.
     """
-    import streamlit.components.v1 as components
-    components.html(
-        """
-        <script>
-        (function () {
-          try {
-            var doc = window.parent.document;
-            if (doc.getElementById('ht-tabbar')) return;     // inject once
-            var items = [
-              ['home',      '\\uD83C\\uDFE0', '\\uD648'],                 // 홈
-              ['mywelfare', '\\u2728',        '\\uB9DE\\uCDA4\\uBCF5\\uC9C0'],   // 맞춤복지
-              ['talk',      '\\uD83D\\uDCAC', 'AI\\uC0C1\\uB2F4'],              // AI상담
-              ['services',  '\\uD83D\\uDCCB', '\\uC11C\\uBE44\\uC2A4']          // 서비스
-            ];
-            var nav = doc.createElement('nav');
-            nav.id = 'ht-tabbar';
-            nav.className = 'tabbar';
-            nav.setAttribute('role', 'navigation');
-            nav.innerHTML = items.map(function (it) {
-              return '<button data-t="' + it[0] + '" aria-label="' + it[2] + '">' +
-                     '<span class="ic">' + it[1] + '</span>' +
-                     '<span class="lb">' + it[2] + '</span></button>';
-            }).join('');
-            doc.body.appendChild(nav);
-            nav.addEventListener('click', function (e) {
-              var b = e.target.closest('button'); if (!b) return;
-              var el = doc.getElementById(b.getAttribute('data-t'));
-              if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});
-              Array.prototype.forEach.call(nav.children, function (c) {
-                c.classList.remove('on');
-              });
-              b.classList.add('on');
-            });
-          } catch (e) { /* cross-origin or restricted: silently skip */ }
-        })();
-        </script>
-        """,
-        height=0,
-    )
+    tabs = [("home", "🏠 홈"), ("mywelfare", "✨ 맞춤복지"),
+            ("talk", "💬 AI상담"), ("services", "📋 서비스")]
+    with st.container(key="htnav"):
+        cols = st.columns(4)
+        for col, (tab, label) in zip(cols, tabs):
+            kind = "primary" if tab == active else "secondary"
+            if col.button(label, key=f"nav_{tab}", use_container_width=True, type=kind):
+                st.session_state["tab"] = tab
+                st.rerun()
 
 
 # --------------------------------------------------------------------------
@@ -867,25 +850,51 @@ def voice_orb(client):
         orbset("listen", "듣고 있어요…")
 
 
-def hero(client):
+def hero_banner(subtitle: str | None = None):
     art = ('<div class="hero-art"><svg viewBox="0 0 220 220" fill="none" '
            'stroke="#ffffff" stroke-opacity=".55" stroke-width="2">'
            '<circle cx="150" cy="90" r="70"/><circle cx="150" cy="90" r="48"/>'
            '<circle cx="150" cy="90" r="26"/>'
            '<path d="M40 150c30-10 60-10 90 0" stroke-opacity=".35"/>'
            '<path d="M30 170c40-14 90-14 130 0" stroke-opacity=".25"/></svg></div>')
+    sub = subtitle or ("말씀하거나 입력하시면 복지 서비스를 쉽게 안내해 드립니다. "
+                       "모든 상담은 안전하게 보호됩니다.")
     st.markdown(f"""
     <div class="hero" id="home"><div class="gov-wrap"><div class="hero-inner">
       {art}
       <span class="eyebrow">대전광역시 · 어르신 복지</span>
       <h1>어르신, 무엇을 도와드릴까요?</h1>
-      <p>말씀하거나 입력하시면 복지 서비스를 쉽게 안내해 드립니다. 모든 상담은 안전하게 보호됩니다.</p>
+      <p>{sub}</p>
     </div></div></div>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="gov-wrap sec" id="talk">', unsafe_allow_html=True)
-    st.markdown('<div class="ai-head">음성·문자 복지 상담 (AI 도우미)</div>',
+
+def home_screen(client):
+    """홈 탭 — 환영 배너 + 빠른 질문(누르면 상담 탭에서 바로 답변) + 공지."""
+    from urllib.parse import quote
+    user = st.session_state.get("auth_user", "어르신")
+    hero_banner(f"{user} 님, 궁금한 복지를 아래에서 바로 물어보세요. 모든 상담은 안전하게 보호됩니다.")
+    st.markdown('<div class="gov-wrap sec" id="homebody">', unsafe_allow_html=True)
+    st.markdown('<h2>무엇이든 물어보세요</h2>'
+                '<p class="sub">아래 질문을 누르면 ‘AI상담’에서 바로 답해 드려요. '
+                '직접 입력하시려면 아래 탭의 💬 AI상담을 눌러 주세요.</p>',
                 unsafe_allow_html=True)
+    quicks = ["기초연금 신청 방법 알려줘", "노인맞춤돌봄서비스가 뭐예요?",
+              "치매안심센터는 어디서 이용하나요?", "무릎이 아픈데 도움받을 곳이 있나요?",
+              "경로당·노인복지관 알려줘", "방문 건강관리 신청하고 싶어요"]
+    chips = "".join(
+        f'<a class="chip" href="?ask={quote(q)}" target="_self">{q}</a>' for q in quicks)
+    st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    notices_block()
+
+
+def chat_area(client):
+    """AI상담 탭 — 전체 화면 채팅(문자 + 음성)."""
+    st.markdown('<div class="gov-wrap sec" id="talk">', unsafe_allow_html=True)
+    st.markdown('<div class="ai-head">💬 AI 복지 상담</div>', unsafe_allow_html=True)
+    st.markdown('<p class="sub" style="margin-top:-4px">궁금하신 복지를 편하게 물어보세요. '
+                '대전 어르신 맞춤으로 답해 드립니다.</p>', unsafe_allow_html=True)
     st.session_state["use_rag"] = True   # 항상 RAG 사용(문서 근거)
     orb_slot = st.container()          # voice orb sits here (top), filled last
     # text input (renders before the blocking voice loop, so it always shows)
@@ -918,24 +927,26 @@ def category_cards(client):
                 '</div></div>', unsafe_allow_html=True)
 
 
-def popular_and_notices():
-    st.markdown('<div class="sec"><div class="gov-wrap">', unsafe_allow_html=True)
-    left, right = st.columns([1, 1], gap="large")
-    with left:
-        st.markdown('<h2>자주 찾는 서비스</h2><p class="sub">많이 이용하시는 서비스입니다.</p>',
-                    unsafe_allow_html=True)
-        chips = "".join(f'<span class="chip">{p}</span>' for p in POPULAR)
-        st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
-    with right:
-        st.markdown('<h2>공지사항</h2><p class="sub">복지 관련 최신 소식입니다.</p>',
-                    unsafe_allow_html=True)
-        rows = ""
-        for i, (date, title) in enumerate(NOTICES):
-            new = '<span class="newtag">NEW</span>' if i == 0 else ""
-            rows += (f'<div class="notice"><span class="date">{date}</span>'
-                     f'<span class="t">{title}{new}</span></div>')
-        st.markdown(rows, unsafe_allow_html=True)
-    st.markdown('</div></div>', unsafe_allow_html=True)
+def popular_block():
+    from urllib.parse import quote
+    chips = "".join(
+        f'<a class="chip" href="?ask={quote(p + " 알려줘")}" target="_self">{p}</a>'
+        for p in POPULAR)
+    st.markdown('<div class="sec"><div class="gov-wrap">'
+                '<h2>자주 찾는 서비스</h2><p class="sub">많이 이용하시는 서비스입니다. '
+                '누르면 바로 안내해 드려요.</p>'
+                f'<div class="chips">{chips}</div></div></div>', unsafe_allow_html=True)
+
+
+def notices_block():
+    rows = ""
+    for i, (date, title) in enumerate(NOTICES):
+        new = '<span class="newtag">NEW</span>' if i == 0 else ""
+        rows += (f'<div class="notice"><span class="date">{date}</span>'
+                 f'<span class="t">{title}{new}</span></div>')
+    st.markdown('<div class="sec"><div class="gov-wrap">'
+                '<h2>공지사항</h2><p class="sub">복지 관련 최신 소식입니다.</p>'
+                f'{rows}</div></div>', unsafe_allow_html=True)
 
 
 def footer():
@@ -1129,6 +1140,7 @@ def main():
     st.session_state.setdefault("state", {})
     st.session_state.setdefault("font_scale", 1.0)
     st.session_state.setdefault("voice_mode", False)
+    st.session_state.setdefault("tab", "home")   # 폰 앱 탭: home/mywelfare/talk/services
 
     # 접속 흐름: 로그인 → 내 정보 입력 → (이후) 포털 화면.
     # 로그인·내 정보는 무거운 어시스턴트가 필요 없으므로 바로 뜬다.
@@ -1148,6 +1160,7 @@ def main():
         st.query_params.clear()
         if q.strip():
             ask_text(client, q.strip())
+            st.session_state["tab"] = "talk"   # 질문하면 상담 화면으로 전환
 
     with st.sidebar:
         st.subheader("화면 설정")
@@ -1200,18 +1213,28 @@ def main():
         voice_conversation(client)   # hands-free ChatGPT-style voice loop
     else:
         header_nav(client)
-        inject_bottom_nav()      # 폰 하단 탭바(홈·맞춤복지·AI상담·서비스)
-        # Container ordering: the hero holds a blocking voice loop, so render the
-        # sections BELOW it first (into a later container), then fill the hero.
-        hero_c = st.container()
-        lower_c = st.container()
-        with lower_c:
-            my_welfare_cards()   # 내 맞춤 복지(카드) — 프로필 기반 추천
-            category_cards(client)
-            popular_and_notices()
+        tab = st.session_state.get("tab", "home")
+        bottom_tab_bar(tab)      # 폰 하단 탭바(홈·맞춤복지·AI상담·서비스) — 블로킹 전에
+
+        if tab == "mywelfare":
+            if _profile_has_info(st.session_state.get("profile", {})):
+                my_welfare_cards()   # 내 맞춤 복지(카드) — 프로필 기반 추천
+            else:
+                st.markdown('<div class="sec"><div class="gov-wrap">'
+                            '<h2>내 맞춤 복지</h2><p class="sub">내 정보를 입력하시면 '
+                            '받으실 수 있는 복지를 추천해 드려요. 왼쪽 메뉴의 '
+                            '‘내 정보 수정’에서 입력해 주세요.</p></div></div>',
+                            unsafe_allow_html=True)
             footer()
-        with hero_c:
-            hero(client)
+        elif tab == "services":
+            category_cards(client)
+            popular_block()
+            footer()
+        elif tab == "talk":
+            chat_area(client)    # 전체 화면 AI 상담(문자 + 음성)
+        else:                    # home
+            home_screen(client)  # 환영 + 빠른 질문 + 공지
+            footer()
 
 
 if __name__ != "__mp_main__":
