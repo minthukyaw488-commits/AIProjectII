@@ -23,6 +23,9 @@
 | 4. 음성 대화 | STT·TTS voice-to-voice (핸즈프리) | 🔷 실험 구현 |
 | 5. UI 디자인 | 정부포털 스타일 · 접근성 · 모바일/PWA | ✅ 구현 |
 | 6. 평가 | 정량 평가 하네스 (RAG·이상신호·답변품질·모델비교) | ✅ 구축 |
+| **7. 사람 맞춤형** | 계정별 프로필로 **받을 수 있는 복지 자동 추천** + 프로필 반영 상담 | ✅ **구현** |
+| **8. 계정·관계형 DB** | 회원가입·비밀번호(해시), MySQL(users·profiles·chat_logs·복지 카탈로그), 대화 기억 | ✅ **구현** |
+| **9. 배포(서비스화)** | AWS 서버 공개 배포 · 고정 IP · 폰 접속(PWA) | ✅ **구현** |
 
 **1단계(텍스트 대화) 성능:** 실데이터 기반 200문항 평가에서 **정답률 약 92%**
 (정보 질문 89~91% / **범위 밖 안전 거절 100%**), **사실 정확도 98%** · 한국어 준수 98%
@@ -77,7 +80,13 @@
 | `src/agent.py` | **실험** 에이전트 (도구 호출 + 다중 의도 플래너, 로컬·안전) |
 | `src/worker.py`, `src/worker_server.py` | 모델 추론용 별도 워커 프로세스 |
 | `src/vad_stream.py`, `src/tts.py` | 핸즈프리 음성(VAD) · 로컬 TTS |
-| `app.py` | Streamlit 웹/모바일 데모 (정부포털 스타일, PWA) |
+| `app.py` | Streamlit 웹/모바일 데모 (정부포털 스타일, PWA, 로그인·맞춤 복지·대화 기억) |
+| `src/welfare_rules.py` | **사람 맞춤형** 복지 자격 규칙표 + 프로필 매칭 |
+| `src/db.py` | 저장소 계층 — 프로필·대화·계정(MySQL 또는 파일), 비밀번호 해시 |
+| `src/seed_welfare.py` | 복지 카탈로그 시딩(기본표 → DB) |
+| `profile_match.py` | 맞춤형 CLI 데모(프로필→복지 추천, `--rag` 근거) |
+| `profile_server.py`, `app_personal.py` | 맞춤형 웹(FastAPI) — 폼·로그인·맞춤 상담 |
+| `deploy/` | 배포 가이드·스키마·systemd (`DEPLOY*.md`, `schema.sql`, `STABLE_ACCESS.md`) |
 | `desktop_app.py` | 데스크톱 앱(전체화면) 실행기 |
 | `run_phone.sh` | 휴대폰용 로컬 HTTPS 실행기 (마이크 지원) |
 | `set_hero_image.py` | 홈 배너 배경 이미지 설정 |
@@ -138,6 +147,56 @@ python eval_qa.py
 
 **현재 사용 데이터(예)**: 보건복지부 「2025 노인보건복지 사업안내(1·2권)」,
 대전광역시 노인맞춤돌봄·재가노인 식사배달 현황(CSV), 실버 시설 현황(XLS) 등.
+
+## 사람 맞춤형 (Personalization)
+
+일반 챗봇은 누구에게나 같은 정보를 주지만, 이 시스템은 **계정에 내 정보를 넣으면
+받을 수 있는 복지를 먼저 알려주고**, 이어지는 상담도 그 사람 상황에 맞춥니다.
+
+- **프로필 → 자격 매칭(규칙):** 나이·소득·거주 구·독거·거동·질환을 대전 복지
+  자격 조건과 자동 대조해 **받을 수 있음 / 확인 필요 / 대상 아님**으로 분류
+  (`src/welfare_rules.py`). 복지 목록은 **DB 카탈로그**에서 읽습니다(`welfare_catalog`).
+- **맞춤 상담:** 질문에 프로필을 반영해 "이 분 상황에 맞춰" 답하고, 인사·잡담은
+  복지를 나열하지 않고 짧게 응대.
+- **문서 근거 결합:** 추천된 복지마다 RAG로 실제 공문서 근거(출처·유사도)를 함께 표시.
+- 실행: 포털(`app.py`) 로그인→내 정보→맞춤 복지 카드, CLI(`profile_match.py --rag`),
+  API(`profile_server.py` / `app_personal.py`).
+
+## 계정 · 관계형 DB (MySQL)
+
+프로필·대화를 파일이 아닌 **관계형 DB**에 저장해 전문 서비스의 뼈대를 갖춥니다
+(`src/db.py`, `deploy/schema.sql`). `USE_MYSQL=1`이면 MySQL, 아니면 JSON 파일로
+자동 폴백하여 **어디서나 동작**합니다.
+
+```
+users ─< profiles        (사용자 1명당 프로필 1개)
+users ─< chat_logs       (사용자 1명당 대화 여러 개 — "지난 대화" 기억)
+welfare_catalog          (복지 정보를 DB로)
+```
+
+- **보안 로그인:** 회원가입/로그인, 비밀번호는 **salt + pbkdf2-sha256 해시**로 저장(평문 금지).
+- **대화 기억:** 로그인하면 지난 대화를 불러와 이어서 보여줌.
+- 개인정보(`profiles.json`·`chat_logs.json`·`users.json`)는 `.gitignore`로 커밋 제외.
+
+```bash
+# MySQL 사용 시
+mysql -u root < deploy/schema.sql
+USE_MYSQL=1 DB_USER=... DB_PASSWORD=... DB_NAME=welfare_hub python -m src.seed_welfare  # 복지 카탈로그 시딩
+USE_MYSQL=1 DB_USER=... DB_PASSWORD=... DB_NAME=welfare_hub python -m streamlit run app.py
+```
+
+## 배포 (서비스화 · 서버 · 폰)
+
+노트북 없이도 **인터넷에서 누구나 접속**할 수 있게 서버에 배포합니다.
+가이드: `deploy/DEPLOY.md`(FastAPI), `deploy/DEPLOY_STREAMLIT.md`(Streamlit),
+`deploy/STABLE_ACCESS.md`(고정 IP·도메인), `docs/demo_rehearsal.md`.
+
+- **AWS GPU 서버**에 Apache·FastAPI/Streamlit·Ollama·MySQL을 올려 공개 URL로 접속.
+- **고정 IP(Elastic IP)**로 서버를 껐다 켜도 같은 주소 유지.
+- **폰**: 공개 URL을 모바일 브라우저로 열고 **홈 화면에 추가**하면 앱처럼 전체화면(PWA).
+- **지연 로딩:** 화면(로그인·프로필·포털)은 즉시 뜨고, 무거운 인덱싱은 첫 질문에서만
+  수행(이후 캐시돼 빠름).
+- `systemd`로 상시 가동(터미널을 닫아도 유지).
 
 ## 이상신호 판정 로직 (rule-based)
 
