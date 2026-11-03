@@ -53,6 +53,16 @@ def get_client():
     return AssistantClient()
 
 
+class _LazyClient:
+    """포털·채팅에서 '처음 필요할 때만' 무거운 어시스턴트(모델+인덱싱)를 만든다.
+    덕분에 로그인·내 정보·포털 화면은 인덱싱을 기다리지 않고 바로 뜨고, 첫 질문에서만
+    준비 시간이 걸린다(모델·인덱스는 한 번 만들면 캐시돼 이후엔 빠르다)."""
+    def __getattr__(self, name):
+        with st.spinner("상담을 준비하는 중입니다… (첫 질문은 조금 걸릴 수 있어요)"):
+            real = get_client()          # @st.cache_resource: 한 번만 생성
+        return getattr(real, name)
+
+
 @st.cache_resource
 def get_tts():
     return TextToSpeech()
@@ -989,7 +999,7 @@ def admin_view(client):
     st.markdown('<h2>관리자 · 이상신호 모니터</h2>'
                 '<p class="sub">어르신 화면에는 보이지 않는 배경 모니터링입니다.</p>',
                 unsafe_allow_html=True)
-    s = st.session_state["state"]
+    s = st.session_state.get("state") or {}
     c1, c2, c3 = st.columns(3)
     status = ("긴급 확인" if s.get("crisis") else
               "주의" if s.get("is_abnormal") else "정상")
@@ -1017,21 +1027,23 @@ def admin_view(client):
 
 
 def main():
-    with st.spinner("대전노인복지HUB를 준비하는 중입니다…"):
-        client = get_client()
     st.session_state.setdefault("chat", [])
     st.session_state.setdefault("alerts", [])
-    st.session_state.setdefault("state", client.state())
+    st.session_state.setdefault("state", {})
     st.session_state.setdefault("font_scale", 1.0)
     st.session_state.setdefault("voice_mode", False)
 
     # 접속 흐름: 로그인 → 내 정보 입력 → (이후) 포털 화면.
+    # 로그인·내 정보는 무거운 어시스턴트가 필요 없으므로 바로 뜬다.
     if not st.session_state.get("auth_user"):
         login_screen()
         return
     if not st.session_state.get("profile_done"):
         profile_screen()
         return
+
+    # 포털부터 어시스턴트 필요 — 지연 로딩(화면은 먼저 뜨고, 첫 질문에서만 준비).
+    client = _LazyClient()
 
     # A category card links to ?ask=<question>; handle it, then clear the param.
     if "ask" in st.query_params:
