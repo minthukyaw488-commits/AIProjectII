@@ -22,12 +22,12 @@ st.set_page_config(page_title="대전노인복지HUB", layout="wide",
 # --- service categories & content ----------------------------------------
 # (name, desc, color, icon-key, question) - no emoji, no red.
 CATEGORIES = [
-    ("기초연금", "매월 연금을 지원합니다", "#2563eb", "coin", "기초연금은 어떻게 신청하나요?"),
-    ("노인맞춤돌봄", "생활지원사 방문·안부", "#4f46e5", "care", "노인맞춤돌봄서비스를 받고 싶어요"),
-    ("방문건강관리", "간호사 가정 방문", "#0d9488", "cross", "집에서 혈압 건강관리 받고 싶어요"),
-    ("치매안심", "무료 검진·상담", "#0284c7", "bulb", "치매 검진 무료로 받고 싶어요"),
-    ("응급안전안심", "화재·응급 감지", "#0f766e", "shield", "혼자 사는데 응급상황이 걱정돼요"),
-    ("노인일자리", "일자리·사회활동", "#7c3aed", "case", "노인 일자리를 구하고 싶어요"),
+    ("기초연금", "매월 연금을 지원합니다", "#2f5fa8", "coin", "기초연금은 어떻게 신청하나요?"),
+    ("노인맞춤돌봄", "생활지원사 방문·안부", "#4a5a9c", "care", "노인맞춤돌봄서비스를 받고 싶어요"),
+    ("방문건강관리", "간호사 가정 방문", "#2f7d73", "cross", "집에서 혈압 건강관리 받고 싶어요"),
+    ("치매안심", "무료 검진·상담", "#3a6f99", "bulb", "치매 검진 무료로 받고 싶어요"),
+    ("응급안전안심", "화재·응급 감지", "#3d7560", "shield", "혼자 사는데 응급상황이 걱정돼요"),
+    ("노인일자리", "일자리·사회활동", "#6a5a94", "case", "노인 일자리를 구하고 싶어요"),
 ]
 _S = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
       ' stroke-linecap="round" stroke-linejoin="round">')
@@ -94,17 +94,17 @@ def hero_bg_css_value() -> str:
 def inject_css():
     scale = st.session_state.get("font_scale", 1.0)
     hc = st.session_state.get("high_contrast", False)
-    base = 17 * scale
+    base = 19 * scale                      # 어르신용: 기본 글자를 크게
     navy = "#0f2f6f"                       # brand
     navy2 = "#0a2350"                      # deep
-    accent = "#2f6bff"                     # vivid CTA blue
+    accent = "#1f4fb8"                     # calm CTA blue (흰 글씨 대비 충분)
     ink = "#000000" if hc else "#15233d"
-    muted = "#334155" if hc else "#5c6b86"
-    bg = "#ffffff" if hc else "#eef2f9"    # cool light ground
+    muted = "#1e293b" if hc else "#44506a"  # 보조 글자도 대비 7:1 이상
+    bg = "#ffffff" if hc else "#f7f6f2"    # 눈부심 없는 따뜻한 바탕
     surface = "#ffffff"
-    surface2 = "#f5f8fd"
-    line = "#000000" if hc else "#e6ebf4"
-    card_bd = "#000000" if hc else "#e8edf7"
+    surface2 = "#f1efe9"
+    line = "#000000" if hc else "#e3e0d8"
+    card_bd = "#000000" if hc else "#dedad1"
     hero_img = hero_bg_css_value()          # data-URI illustration, or "" (gradient only)
     hero_layer = f"{hero_img}, " if hero_img else ""
     st.markdown(f"""
@@ -116,13 +116,14 @@ def inject_css():
       .stApp{{background:{bg}}}
       html, body, [class*="css"], .stApp{{font-size:{base}px;
         font-family:'Pretendard','Pretendard Variable',-apple-system,'Noto Sans KR',sans-serif;
-        color:{ink}; -webkit-font-smoothing:antialiased}}
+        color:{ink}; line-height:1.6; -webkit-font-smoothing:antialiased}}
       .gov-wrap{{max-width:1140px; margin:0 auto; padding:0 24px}}
-
-      /* top utility bar */
-      .util{{background:{navy2}; color:#c7d4ee; font-size:.82rem}}
-      .util .gov-wrap{{display:flex; justify-content:flex-end; gap:22px; padding:9px 24px}}
-      .util span{{opacity:.85; cursor:pointer}} .util span:hover{{opacity:1;color:#fff}}
+      /* 버튼이 들어간 섹션(카드·자주 찾는 서비스)을 본문 폭에 맞춘다 */
+      [class*="st-key-sec_"]{{max-width:1140px; margin:0 auto; padding:0 24px 12px}}
+      /* 글자 크기 선택 버튼(segmented control)도 크게 */
+      [data-testid="stButtonGroup"] button{{min-height:52px; font-size:1.05rem;
+        font-weight:700; padding:0 20px}}
+      [data-testid="stWidgetLabel"] p{{font-size:1rem; font-weight:700; color:{ink}}}
 
       /* header + nav */
       .gnav{{background:rgba(255,255,255,.9); backdrop-filter:saturate(1.4) blur(8px);
@@ -145,18 +146,18 @@ def inject_css():
         overflow:hidden; min-height:120px; display:flex; flex-direction:column;
         justify-content:center;
         background:
-          linear-gradient(90deg, {navy2}f0 0%, {navy}cc 46%, {navy}66 78%, {navy}33 100%),
+          linear-gradient(90deg, {navy2}f5 0%, {navy}e6 46%, {navy}bf 78%, {navy}99 100%),
           {hero_layer}
           linear-gradient(135deg, {navy} 0%, {navy2} 100%);
         background-size:cover, cover, cover;
         background-position:center, center right, center;
         background-repeat:no-repeat}}
-      .hero .eyebrow{{display:inline-block; font-size:.78rem; font-weight:700;
-        letter-spacing:.14em; text-transform:uppercase; color:#e2ecff;
+      .hero .eyebrow{{display:inline-block; font-size:.9rem; font-weight:700;
+        letter-spacing:.06em; text-transform:uppercase; color:#ffffff;
         background:#ffffff2b; padding:5px 13px; border-radius:999px; margin-bottom:10px}}
       .hero h1{{font-size:2rem; font-weight:800; margin:0 0 6px; letter-spacing:-.03em;
         line-height:1.18; text-shadow:0 2px 14px {navy2}cc}}
-      .hero p{{font-size:1.04rem; color:#eaf1ff; margin:0; max-width:60ch; line-height:1.5;
+      .hero p{{font-size:1.1rem; color:#ffffff; margin:0; max-width:60ch; line-height:1.5;
         position:relative; z-index:1; text-shadow:0 1px 10px {navy2}b3}}
       .hero .eyebrow, .hero h1{{position:relative; z-index:1}}
       /* concentric SVG art is only shown when there is no photo background */
@@ -168,9 +169,10 @@ def inject_css():
       /* section */
       .sec{{padding:44px 0}}
       .sec.alt{{background:{surface2}}}
-      .sec h2{{font-size:1.72rem; font-weight:800; color:{ink}; margin:0 0 6px;
+      .sec h2, .sec-head h2{{font-size:1.72rem; font-weight:800; color:{ink}; margin:0 0 6px;
         letter-spacing:-.03em}}
-      .sec .sub{{color:{muted}; margin:0 0 26px; font-size:1.05rem}}
+      .sec .sub, .sec-head .sub{{color:{muted}; margin:0 0 22px; font-size:1.08rem}}
+      .sec-head{{padding-top:40px}}
 
       /* header row (brand | search | nav) */
       .brand-svg{{width:24px;height:24px;color:#fff}}
@@ -191,53 +193,43 @@ def inject_css():
       [data-testid="stForm"] button:hover{{background:{navy2} !important;
         border-color:{navy2} !important; color:#fff !important}}
 
-      /* colored category cards */
-      .cat-grid{{display:grid; grid-template-columns:repeat(3,1fr); gap:20px}}
-      .cat-card{{display:flex; flex-direction:column; gap:12px; min-height:172px;
-        padding:26px 24px; border-radius:22px; text-decoration:none; color:#fff;
-        background:var(--c); background-image:linear-gradient(150deg,#ffffff22,#0000001f);
-        box-shadow:0 20px 38px -18px var(--c); position:relative; overflow:hidden;
-        transition:transform .22s cubic-bezier(.2,.7,.3,1), box-shadow .22s;
-        animation:fadeUp .55s both}}
-      .cat-card:hover{{transform:translateY(-6px); box-shadow:0 30px 54px -18px var(--c)}}
-      .cat-card:nth-child(2){{animation-delay:.05s}} .cat-card:nth-child(3){{animation-delay:.1s}}
-      .cat-card:nth-child(4){{animation-delay:.15s}} .cat-card:nth-child(5){{animation-delay:.2s}}
-      .cat-card:nth-child(6){{animation-delay:.25s}}
-      .cat-ic{{width:54px;height:54px;border-radius:16px;background:#ffffff2b;
-        display:flex;align-items:center;justify-content:center}}
-      .cat-ic svg{{width:27px;height:27px;color:#fff}}
-      .cat-name{{font-size:1.36rem;font-weight:800;letter-spacing:-.02em;color:#ffffff}}
-      .cat-desc{{font-size:1.02rem;color:#ffffff;font-weight:500;opacity:.92}}
-      .cat-card .arw{{position:absolute;right:24px;bottom:22px;font-size:1.4rem;opacity:.55;
-        transition:transform .2s}}
-      .cat-card:hover .arw{{transform:translateX(5px);opacity:.95}}
-      @media(max-width:920px){{.cat-grid{{grid-template-columns:repeat(2,1fr)}}}}
-      @media(max-width:560px){{.cat-grid{{grid-template-columns:1fr}}}}
+      /* service cards: 밝은 바탕 + 왼쪽 색 띠 (원색 면을 없애 눈부심 감소).
+         카드 아래의 '자세히 안내받기' 버튼이 실제 동작(새로고침 없음). */
+      .cat-card{{display:flex; flex-direction:column; gap:10px; min-height:150px;
+        padding:22px 22px 18px; border-radius:18px; color:{ink};
+        background:{surface}; border:1px solid {card_bd}; border-left:8px solid var(--c);
+        margin-bottom:8px}}
+      .cat-ic{{width:52px;height:52px;border-radius:14px;background:{surface2};
+        background:color-mix(in srgb, var(--c) 14%, #ffffff);
+        display:flex;align-items:center;justify-content:center;font-size:1.5rem}}
+      .cat-ic svg{{width:28px;height:28px;color:var(--c)}}
+      .cat-name{{font-size:1.36rem;font-weight:800;letter-spacing:-.02em;color:{ink}}}
+      .cat-desc{{font-size:1.08rem;color:{muted};font-weight:500}}
       @keyframes fadeUp{{from{{opacity:0;transform:translateY(16px)}}to{{opacity:1;transform:none}}}}
       .hero-inner{{animation:fadeUp .6s both}}
 
       /* general Streamlit buttons */
+      /* 버튼: 크게(최소 56px), 테두리 분명, 눌러도 튀지 않게 */
       div[data-testid="stButton"] > button{{
-        border:1px solid {card_bd}; border-radius:13px; background:{surface}; color:{ink};
-        font-size:1.02rem; font-weight:700; padding:.7rem 1.15rem; letter-spacing:-.01em;
-        box-shadow:0 1px 2px rgba(16,35,61,.05);
-        transition:transform .16s, box-shadow .16s, border-color .16s}}
-      div[data-testid="stButton"] > button:hover{{border-color:{accent};
-        transform:translateY(-2px); color:{navy};
-        box-shadow:0 10px 22px -12px {accent}66}}
-      /* primary buttons (CTA / voice) */
+        border:2px solid {card_bd}; border-radius:13px; background:{surface}; color:{ink};
+        font-size:1.1rem; font-weight:700; padding:.8rem 1.15rem; letter-spacing:-.01em;
+        min-height:56px; transition:border-color .16s, background .16s}}
+      div[data-testid="stButton"] > button:hover{{border-color:{accent}; color:{navy};
+        background:{surface2}}}
+      div[data-testid="stButton"] > button:focus-visible{{outline:3px solid {accent};
+        outline-offset:2px}}
+      /* primary buttons (CTA / 선택된 글자 크기) */
       .stButton button[kind="primary"], .stButton button[kind="primaryFormSubmit"]{{
-        min-height:0; background:linear-gradient(135deg,{accent},{navy});
-        border:none; color:#fff; box-shadow:0 12px 24px -10px {accent}88}}
-      .stButton button[kind="primary"]:hover{{transform:translateY(-2px); color:#fff;
-        box-shadow:0 18px 32px -10px {accent}aa}}
+        background:{navy}; border-color:{navy}; color:#fff}}
+      .stButton button[kind="primary"]:hover{{background:{navy2}; border-color:{navy2};
+        color:#fff}}
 
       /* chat bubbles (user right, assistant left) */
       .chat{{display:flex; flex-direction:column; gap:12px; padding:10px 0}}
       .row{{display:flex}} .row.r{{justify-content:flex-end}} .row.l{{justify-content:flex-start}}
-      .bub{{max-width:76%; padding:13px 18px; border-radius:18px; font-size:1.05rem;
-        line-height:1.55; box-shadow:0 1px 3px rgba(16,35,61,.07); word-break:break-word}}
-      .bub.user{{background:linear-gradient(135deg,{accent},{navy}); color:#fff;
+      .bub{{max-width:76%; padding:14px 19px; border-radius:18px; font-size:1.12rem;
+        line-height:1.65; box-shadow:0 1px 3px rgba(16,35,61,.07); word-break:break-word}}
+      .bub.user{{background:{navy}; color:#fff;
         border-bottom-right-radius:6px}}
       .bub.bot{{background:{surface}; color:{ink}; border:1px solid {card_bd};
         border-bottom-left-radius:6px}}
@@ -259,13 +251,11 @@ def inject_css():
 
       /* notices */
       .notice{{display:flex; gap:16px; align-items:center; padding:15px 12px;
-        border-bottom:1px solid {line}; font-size:1.05rem; border-radius:12px;
-        transition:background .15s}}
-      .notice:hover{{background:{surface2}}}
-      .notice .date{{color:#8493ac; font-variant-numeric:tabular-nums; min-width:104px;
-        font-size:.95rem}}
+        border-bottom:1px solid {line}; font-size:1.08rem}}
+      .notice .date{{color:{muted}; font-variant-numeric:tabular-nums; min-width:110px;
+        font-size:1rem}}
       .notice .t{{font-weight:600; color:{ink}}}
-      .newtag{{background:{accent}; color:#fff; font-size:.68rem; font-weight:800;
+      .newtag{{background:{accent}; color:#fff; font-size:.8rem; font-weight:800;
         border-radius:6px; padding:2px 7px; margin-left:9px; vertical-align:middle;
         letter-spacing:.05em}}
 
@@ -275,7 +265,7 @@ def inject_css():
       .foot .cols{{display:flex; gap:48px; flex-wrap:wrap; margin-bottom:22px; font-size:.98rem;
         line-height:1.9}}
       .foot b{{color:#fff; display:block; margin-bottom:10px; font-size:1.02rem; font-weight:700}}
-      .foot .copy{{border-top:1px solid #ffffff1a; padding-top:18px; font-size:.86rem; color:#8195b8}}
+      .foot .copy{{border-top:1px solid #ffffff1a; padding-top:18px; font-size:.95rem; color:#c7d4ee}}
 
       /* hands-free voice orb */
       .orb{{width:184px;height:184px;border-radius:50%;margin:30px auto;
@@ -299,16 +289,16 @@ def inject_css():
       @media(max-width:640px){{
         .gov-wrap{{padding:0 15px}}
         .sec{{padding:26px 0}}
-        .sec h2{{font-size:1.42rem}} .sec .sub{{font-size:1rem; margin-bottom:18px}}
-        /* nav links are decorative on a phone -> hide to reduce clutter */
-        .menu{{display:none}}
-        .util .gov-wrap{{gap:16px; justify-content:center; flex-wrap:wrap}}
-        .brand{{font-size:1.2rem}} .brand .seal{{width:36px;height:36px}}
-        .hero h1{{font-size:1.6rem}} .hero p{{font-size:.98rem}}
+        [class*="st-key-sec_"]{{padding:0 15px 10px}}
+        .sec h2, .sec-head h2{{font-size:1.45rem}}
+        .sec .sub, .sec-head .sub{{font-size:1.05rem; margin-bottom:16px}}
+        .sec-head{{padding-top:26px}}
+        .brand{{font-size:1.25rem}} .brand .seal{{width:36px;height:36px}}
+        .hero h1{{font-size:1.6rem}} .hero p{{font-size:1.05rem}}
         .hero-inner{{min-height:100px; padding:20px 18px}}
-        .cat-name{{font-size:1.22rem}} .cat-desc{{font-size:.98rem}}
-        .cat-card{{min-height:132px; padding:22px 20px}}
-        .bub{{max-width:88%; font-size:1.02rem}}
+        .cat-name{{font-size:1.28rem}} .cat-desc{{font-size:1.05rem}}
+        .cat-card{{min-height:0; padding:18px 18px 14px}}
+        .bub{{max-width:90%; font-size:1.1rem}}
         .orb{{width:150px;height:150px;margin:22px auto}}
         .vstatus{{font-size:1.12rem}}
         .ai-head{{font-size:1.22rem}}
@@ -317,7 +307,7 @@ def inject_css():
         .foot .cols{{gap:24px}}
         /* comfortable touch targets */
         [data-testid="stForm"] button, [data-testid="stTextInput"] input{{
-          min-height:48px !important; font-size:1.05rem !important}}
+          min-height:56px !important; font-size:1.1rem !important}}
         .chip{{padding:12px 18px}}
       }}
     </style>
@@ -415,12 +405,13 @@ def ask_text(client, q: str):
                   "복지 관련 질문이면 이 분 상황에 맞춰 답하고, 인사·일상 대화면 "
                   "복지 내용을 나열하지 말고 짧게 인사로만 답하세요.)")
     # Demo toggle: RAG on (문서 근거) vs off (LLM만).
-    if st.session_state.get("use_rag", True):
-        r = client.ask(q_send)
-    else:
-        r = client.ask_norag(q_send)
+    use_rag = st.session_state.get("use_rag", True)
+    r = _safe_ask(lambda: client.ask(q_send) if use_rag else client.ask_norag(q_send))
     if "error" in r:
-        st.error(r["error"]); return
+        # 바로 st.rerun()이 이어지므로 st.error는 사라진다 → 상태에 남겨 상담창에서 보여준다.
+        st.session_state["last_error"] = {"q": q, "detail": str(r["error"])}
+        return
+    st.session_state.pop("last_error", None)
     r["question"] = q   # 화면에는 원래 질문만 보이게
     _store(r)
     # 대화 기록 저장(MySQL 또는 파일)
@@ -433,14 +424,43 @@ def ask_text(client, q: str):
         pass
 
 
+def _safe_ask(call) -> dict:
+    """답변을 기다리는 동안 안내 문구를 보여주고, 워커 오류도 화면이 깨지지 않게
+    {"error": ...} 형태로 돌려준다(빨간 오류 화면 대신 친절한 안내)."""
+    try:
+        with st.spinner("답변을 준비하고 있어요… 잠시만 기다려 주세요."):
+            return call()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
+def error_notice(client):
+    """마지막 질문이 실패했으면 쉬운 말 안내 + '다시 물어보기' 버튼."""
+    err = st.session_state.get("last_error")
+    if not err:
+        return
+    st.warning("죄송합니다. 잠시 문제가 생겨 답변을 드리지 못했어요.  \n"
+               "아래 **다시 물어보기**를 눌러 주세요. 계속 안 되면 가까운 주민센터로 문의해 주세요.")
+    c1, c2 = st.columns(2)
+    if err["q"] and c1.button("다시 물어보기", key="err_retry", type="primary",
+                              use_container_width=True):
+        st.session_state.pop("last_error", None)
+        ask_text(client, err["q"]); st.rerun()
+    if c2.button("닫기", key="err_close", use_container_width=True):
+        st.session_state.pop("last_error", None); st.rerun()
+    with st.expander("자세한 내용 (담당자용)"):
+        st.code(err["detail"])
+
+
 def ask_audio(client, wav: bytes):
     from pathlib import Path
     tmp = Path("data/audio") / "mic_input.wav"
     tmp.parent.mkdir(parents=True, exist_ok=True)
     tmp.write_bytes(wav)
-    r = client.ask_audio(str(tmp))
+    r = _safe_ask(lambda: client.ask_audio(str(tmp)))
     if "error" in r:
-        st.error(r["error"]); return
+        st.session_state["last_error"] = {"q": "", "detail": str(r["error"])}
+        return
     _store(r)
 
 
@@ -469,6 +489,85 @@ def _profile_has_info(p: dict) -> bool:
                             "mobility_issue", "chronic_illness"))
 
 
+_FONT_SIZES = {"보통": 1.0, "크게": 1.2, "아주 크게": 1.4}
+
+
+def _sync_fs(widget_key: str):
+    v = st.session_state.get(widget_key)
+    if v in _FONT_SIZES:
+        st.session_state["font_scale"] = _FONT_SIZES[v]
+
+
+def _sync_hc(widget_key: str):
+    st.session_state["high_contrast"] = st.session_state[widget_key]
+
+
+def a11y_controls(key: str):
+    """글자 크기·고대비 — 사이드바가 아닌 화면 위에 항상 보이게 둔다.
+    on_change 콜백이라 누르는 즉시(같은 실행에서) 화면에 반영되고, 위젯 key가
+    화면마다 달라도 값은 font_scale/high_contrast에 남는다."""
+    cur = st.session_state.get("font_scale", 1.0)
+    cur_label = next((l for l, s in _FONT_SIZES.items() if abs(s - cur) < .01), "보통")
+    fs_col, hc_col = st.columns([1.4, 1], vertical_alignment="bottom")
+    wk = f"{key}_fs"
+    with fs_col:
+        if hasattr(st, "segmented_control"):        # Streamlit 1.40+
+            st.segmented_control("글자 크기", list(_FONT_SIZES), key=wk, default=cur_label,
+                                 on_change=_sync_fs, args=(wk,))
+        else:
+            st.radio("글자 크기", list(_FONT_SIZES), key=wk, horizontal=True,
+                     index=list(_FONT_SIZES).index(cur_label),
+                     on_change=_sync_fs, args=(wk,))
+    hk = f"{key}_hc"
+    with hc_col:
+        st.toggle("글자를 더 진하게 (고대비)", key=hk,
+                  value=st.session_state.get("high_contrast", False),
+                  on_change=_sync_hc, args=(hk,))
+
+
+def _wrap(key: str):
+    """본문 폭 컨테이너(st-key-<key> 클래스). key 미지원 Streamlit이면 일반 컨테이너."""
+    try:
+        return st.container(key=key)
+    except TypeError:
+        return st.container()
+
+
+def _ask_now(client, q: str):
+    """버튼으로 질문: 새로고침 없이 바로 묻고, 다음 화면에서 상담창으로 스크롤."""
+    ask_text(client, q)
+    st.session_state["scroll_chat"] = True
+    st.rerun()
+
+
+def card_grid(client, items, key: str):
+    """서비스 카드. items: (이름, 설명, 색, 아이콘 HTML, 질문).
+    예전의 <a href="?ask="> 링크는 페이지를 새로 불러 세션(로그인)이 끊겼다 —
+    이제 카드마다 실제 버튼을 둬서 로그인 상태가 유지된다."""
+    for start in range(0, len(items), 3):
+        cols = st.columns(3, gap="medium")
+        for i, (col, (name, desc, color, icon, q)) in enumerate(
+                zip(cols, items[start:start + 3])):
+            with col:
+                st.markdown(f'<div class="cat-card" style="--c:{color}">'
+                            f'<span class="cat-ic">{icon}</span>'
+                            f'<span class="cat-name">{name}</span>'
+                            f'<span class="cat-desc">{desc}</span></div>',
+                            unsafe_allow_html=True)
+                if st.button("자세히 안내받기 →", key=f"{key}_{start + i}",
+                             use_container_width=True):
+                    _ask_now(client, q)
+
+
+def ask_buttons(client, items, key: str, ncols: int = 2):
+    """짧은 질문 버튼 묶음. items: (버튼 글자, 질문)."""
+    for start in range(0, len(items), ncols):
+        cols = st.columns(ncols)
+        for i, (col, (label, q)) in enumerate(zip(cols, items[start:start + ncols])):
+            if col.button(label, key=f"{key}_{start + i}", use_container_width=True):
+                _ask_now(client, q)
+
+
 def login_screen():
     """1단계 — 로그인(성함 기반, 프로토타입). 성공하면 auth_user 설정."""
     inject_css()
@@ -476,12 +575,13 @@ def login_screen():
                 unsafe_allow_html=True)
     st.markdown(
         '<div style="text-align:center;margin-bottom:10px">'
-        '<div class="seal" style="margin:0 auto 14px;width:58px;height:58px;font-size:30px">🏠</div>'
-        '<div style="font-size:26px;font-weight:800;color:#0f2f6f;letter-spacing:-.03em">대전노인복지 HUB</div>'
-        '<div style="color:#5c6b86;font-size:14px;margin-top:4px">대전광역시 · 어르신 복지 AI</div>'
-        '<span style="display:inline-block;margin-top:15px;font-size:12.5px;font-weight:800;color:#2f6bff;'
-        'background:#f5f8fd;padding:6px 14px;border-radius:999px">1단계 · 로그인</span>'
+        '<div class="seal" style="margin:0 auto 14px;width:58px;height:58px;font-size:1.8rem">🏠</div>'
+        '<div style="font-size:1.6rem;font-weight:800;color:#0f2f6f;letter-spacing:-.03em">대전노인복지 HUB</div>'
+        '<div style="color:#44506a;font-size:1rem;margin-top:4px">대전광역시 · 어르신 복지 AI</div>'
+        '<span style="display:inline-block;margin-top:15px;font-size:.95rem;font-weight:800;color:#1f4fb8;'
+        'background:#f1efe9;padding:6px 14px;border-radius:999px">1단계 · 로그인</span>'
         '</div>', unsafe_allow_html=True)
+    a11y_controls("login")
     from src import db
 
     def _enter(name: str):
@@ -546,11 +646,12 @@ def profile_screen():
                 unsafe_allow_html=True)
     st.markdown(
         '<div style="text-align:center;margin-bottom:12px">'
-        '<div class="seal" style="margin:0 auto 12px;width:52px;height:52px;font-size:26px">🧓</div>'
-        f'<div style="font-size:23px;font-weight:800;color:#0f2f6f;letter-spacing:-.03em">{user} 님, 반갑습니다</div>'
-        '<span style="display:inline-block;margin-top:12px;font-size:12.5px;font-weight:800;color:#2f6bff;'
-        'background:#f5f8fd;padding:6px 14px;border-radius:999px">2단계 · 내 정보</span>'
+        '<div class="seal" style="margin:0 auto 12px;width:52px;height:52px;font-size:1.6rem">🧓</div>'
+        f'<div style="font-size:1.5rem;font-weight:800;color:#0f2f6f;letter-spacing:-.03em">{user} 님, 반갑습니다</div>'
+        '<span style="display:inline-block;margin-top:12px;font-size:.95rem;font-weight:800;color:#1f4fb8;'
+        'background:#f1efe9;padding:6px 14px;border-radius:999px">2단계 · 내 정보</span>'
         '</div>', unsafe_allow_html=True)
+    a11y_controls("profile")
     st.caption("받으실 수 있는 복지를 정확히 찾기 위해 사용됩니다. 모르면 비워두셔도 됩니다.")
     tri = {"모름": None, "예": True, "아니오": False}
     rev = {None: "모름", True: "예", False: "아니오"}
@@ -568,10 +669,12 @@ def profile_screen():
     ill = c2.selectbox("만성질환·기억력 저하", ["모름", "예", "아니오"],
                        index=["모름", "예", "아니오"].index(rev[p.get("chronic_illness")]))
     if st.button("저장하고 시작하기", type="primary", use_container_width=True):
-        try:
-            age = int(age_s) if age_s.strip() else None
-        except ValueError:
-            age = None
+        # "75세", "만 75" 처럼 적어도 숫자만 읽는다.
+        digits = "".join(ch for ch in age_s if ch.isdigit())
+        age = int(digits) if digits else None
+        if age is not None and not 40 <= age <= 120:
+            st.warning("나이를 숫자로 다시 확인해 주세요. (예: 75)")
+            st.stop()
         prof = {"age": age, "district": None if district == "선택 안 함" else district,
                 "income_low": tri[income], "living_alone": tri[alone],
                 "mobility_issue": tri[mob], "chronic_illness": tri[ill]}
@@ -587,10 +690,9 @@ def profile_screen():
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-def my_welfare_cards():
+def my_welfare_cards(client):
     """session_state['profile'] 기준으로 '내 맞춤 복지'를 카드로 보여준다.
-    카드를 누르면 ?ask= 로 해당 복지를 AI 도우미에게 바로 물어본다."""
-    from urllib.parse import quote
+    카드 버튼을 누르면 해당 복지를 AI 도우미에게 바로 물어본다."""
     p = st.session_state.get("profile", {})
     if not _profile_has_info(p):
         return
@@ -600,48 +702,47 @@ def my_welfare_cards():
     except Exception:
         return
     user = st.session_state.get("auth_user", "어르신")
-    # 카드 색상(정부 포털 톤) 순환
-    palette = ["#1f7a43", "#1d6fe0", "#b0472b", "#6b4fbb",
-               "#0f766e", "#b45309", "#be185d", "#0369a1"]
-    cards = ""
-    for i, r in enumerate(eligible):
-        c = palette[i % len(palette)]
-        ask_q = f"{r.welfare.name} 대상과 신청 방법을 알려줘"
-        cards += (
-            f'<a class="cat-card" style="--c:{c}" href="?ask={quote(ask_q)}" target="_self">'
-            f'<span class="cat-ic">✅</span>'
-            f'<span class="cat-name">{r.welfare.name}</span>'
-            f'<span class="cat-desc">{r.welfare.summary}</span>'
-            f'<span class="arw">→</span></a>')
-    if not cards:
-        cards = ('<div class="cat-desc" style="color:#5c6b86">입력하신 정보로는 '
-                 '바로 해당되는 복지를 찾지 못했어요. 정보를 더 입력해 보세요.</div>')
-    maybe_html = ""
-    if maybe:
-        chips = "".join(f'<span class="chip">{r.welfare.name}</span>' for r in maybe)
-        maybe_html = ('<p class="sub" style="margin-top:22px">확인하면 받으실 수 있어요</p>'
-                      f'<div class="chips">{chips}</div>')
-    st.markdown(
-        '<div class="sec"><div class="gov-wrap">'
-        f'<h2>{user} 님 맞춤 복지</h2>'
-        f'<p class="sub">입력하신 정보({_profile_summary(p)})로 받으실 수 있는 복지입니다. '
-        '카드를 누르면 자세히 안내해 드려요. · 정확한 기준은 주민센터 확인</p>'
-        f'<div class="cat-grid">{cards}</div>'
-        f'{maybe_html}'
-        '</div></div>', unsafe_allow_html=True)
+    # 카드 색 띠(차분한 정부 포털 톤) 순환
+    palette = ["#2f7a4f", "#2f5fa8", "#8a5a2b", "#5a4f94",
+               "#2f7d73", "#7a6224", "#3a6f99", "#4a5a9c"]
+    items = [(r.welfare.name, r.welfare.summary, palette[i % len(palette)], "✅",
+              f"{r.welfare.name} 대상과 신청 방법을 알려줘")
+             for i, r in enumerate(eligible)]
+    with _wrap("sec_mine"):
+        st.markdown(
+            '<div class="sec-head">'
+            f'<h2>{user} 님 맞춤 복지</h2>'
+            f'<p class="sub">입력하신 정보({_profile_summary(p)})로 받으실 수 있는 복지입니다. '
+            '<b>자세히 안내받기</b>를 누르시면 설명해 드려요. · 정확한 기준은 주민센터 확인</p>'
+            '</div>', unsafe_allow_html=True)
+        if items:
+            card_grid(client, items, "mine")
+        else:
+            st.info("입력하신 정보로는 바로 해당되는 복지를 찾지 못했어요. 정보를 더 입력해 보세요.")
+        if maybe:
+            st.markdown('<p class="sub" style="margin-top:18px">확인하면 받으실 수 있어요</p>',
+                        unsafe_allow_html=True)
+            ask_buttons(client, [(r.welfare.name, f"{r.welfare.name} 대상과 신청 방법을 알려줘")
+                                 for r in maybe], "maybe", ncols=3)
 
 
 # --------------------------------------------------------------------------
 # Portal sections
 # --------------------------------------------------------------------------
 def header_nav(client):
-    st.markdown(
-        '<div class="util"><div class="gov-wrap">'
-        '<span>로그인</span><span>회원가입</span><span>사이트맵</span><span>English</span>'
-        '</div></div>', unsafe_allow_html=True)
+    # 눌러도 동작하지 않던 장식용 링크(로그인·사이트맵·메뉴 등)는 없앴다 —
+    # 어르신이 눌렀다가 아무 일도 없으면 혼란스럽다. 대신 글자 크기 조절을 둔다.
     st.markdown('<div class="gov-wrap" style="padding-top:14px;padding-bottom:6px">',
                 unsafe_allow_html=True)
-    b, s, n = st.columns([1.55, 2.05, 2.2], vertical_alignment="center")
+    with _wrap("sec_hdr"):
+        _header_row(client)
+    st.markdown('</div>', unsafe_allow_html=True)
+    with _wrap("sec_a11y"):
+        a11y_controls("hdr")
+
+
+def _header_row(client):
+    b, s = st.columns([1.4, 2.6], vertical_alignment="center")
     seal = ('<span class="seal"><svg class="brand-svg" viewBox="0 0 24 24" fill="none" '
             'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
             'stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/>'
@@ -649,16 +750,12 @@ def header_nav(client):
     b.markdown(f'<div class="brand">{seal} 대전노인복지HUB</div>', unsafe_allow_html=True)
     with s:
         with st.form("hdr_search", clear_on_submit=True):
-            sc1, sc2 = st.columns([3, 1])
+            sc1, sc2 = st.columns([2.6, 1.1])
             q = sc1.text_input("검색", placeholder="복지 서비스 검색",
                                label_visibility="collapsed")
             go = sc2.form_submit_button("검색", use_container_width=True)
         if go and q.strip():
-            ask_text(client, q.strip()); st.rerun()
-    n.markdown('<div class="menu"><span>복지서비스</span><span>건강·의료</span>'
-               '<span>어르신 돌봄</span><span>공지사항</span><span>상담·문의</span></div>',
-               unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+            _ask_now(client, q.strip())
 
 
 def voice_orb(client):
@@ -796,58 +893,60 @@ def hero(client):
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="gov-wrap sec">', unsafe_allow_html=True)
-    st.markdown('<div class="ai-head">음성·문자 복지 상담 (AI 도우미)</div>',
+    st.markdown('<div id="ai-chat" class="ai-head">음성·문자 복지 상담 (AI 도우미)</div>',
                 unsafe_allow_html=True)
+    if st.session_state.pop("scroll_chat", False):
+        # 아래쪽 카드·버튼으로 질문했으면 답변이 보이는 상담창으로 올려 준다.
+        import streamlit.components.v1 as components
+        components.html(
+            "<script>setTimeout(function(){try{var el=window.parent.document"
+            ".getElementById('ai-chat');if(el)el.scrollIntoView({behavior:'smooth',"
+            "block:'start'});}catch(e){}},300);</script>", height=0)
     st.session_state["use_rag"] = True   # 항상 RAG 사용(문서 근거)
     orb_slot = st.container()          # voice orb sits here (top), filled last
     # text input (renders before the blocking voice loop, so it always shows)
     with st.form("ai_text", clear_on_submit=True):
-        tc1, tc2 = st.columns([5, 1])
+        tc1, tc2 = st.columns([4, 1.2])
         q = tc1.text_input("입력", placeholder="궁금하신 내용을 글로 입력하셔도 됩니다",
                            label_visibility="collapsed")
         go = tc2.form_submit_button("보내기", use_container_width=True)
     if go and q.strip():
         ask_text(client, q.strip()); st.rerun()
+    error_notice(client)
     with orb_slot:
         voice_orb(client)
     st.markdown('</div>', unsafe_allow_html=True)
 
 
 def category_cards(client):
-    from urllib.parse import quote
-    cards = ""
-    for name, desc, color, icon, q in CATEGORIES:
-        cards += (
-            f'<a class="cat-card" style="--c:{color}" href="?ask={quote(q)}" target="_self">'
-            f'<span class="cat-ic">{ICONS[icon]}</span>'
-            f'<span class="cat-name">{name}</span>'
-            f'<span class="cat-desc">{desc}</span>'
-            f'<span class="arw">→</span></a>')
-    st.markdown('<div class="sec alt"><div class="gov-wrap">'
-                '<h2>복지 서비스 바로가기</h2>'
-                '<p class="sub">필요하신 서비스를 선택하시면 AI 도우미가 안내해 드립니다.</p>'
-                f'<div class="cat-grid">{cards}</div>'
-                '</div></div>', unsafe_allow_html=True)
+    with _wrap("sec_cards"):
+        st.markdown('<div class="sec-head">'
+                    '<h2>복지 서비스 바로가기</h2>'
+                    '<p class="sub">필요하신 서비스의 <b>자세히 안내받기</b>를 누르시면 '
+                    'AI 도우미가 안내해 드립니다.</p></div>', unsafe_allow_html=True)
+        card_grid(client, [(name, desc, color, ICONS[icon], q)
+                           for name, desc, color, icon, q in CATEGORIES], "cat")
 
 
-def popular_and_notices():
-    st.markdown('<div class="sec"><div class="gov-wrap">', unsafe_allow_html=True)
-    left, right = st.columns([1, 1], gap="large")
-    with left:
-        st.markdown('<h2>자주 찾는 서비스</h2><p class="sub">많이 이용하시는 서비스입니다.</p>',
-                    unsafe_allow_html=True)
-        chips = "".join(f'<span class="chip">{p}</span>' for p in POPULAR)
-        st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
-    with right:
-        st.markdown('<h2>공지사항</h2><p class="sub">복지 관련 최신 소식입니다.</p>',
-                    unsafe_allow_html=True)
-        rows = ""
-        for i, (date, title) in enumerate(NOTICES):
-            new = '<span class="newtag">NEW</span>' if i == 0 else ""
-            rows += (f'<div class="notice"><span class="date">{date}</span>'
-                     f'<span class="t">{title}{new}</span></div>')
-        st.markdown(rows, unsafe_allow_html=True)
-    st.markdown('</div></div>', unsafe_allow_html=True)
+def popular_and_notices(client):
+    with _wrap("sec_popular"):
+        left, right = st.columns([1, 1], gap="large")
+        with left:
+            st.markdown('<div class="sec-head"><h2>자주 찾는 서비스</h2>'
+                        '<p class="sub">누르시면 바로 안내해 드립니다.</p></div>',
+                        unsafe_allow_html=True)
+            # 예전엔 눌러도 반응 없는 장식 칩이었다 → 실제로 질문하는 버튼
+            ask_buttons(client, [(p, f"{p}에 대해 알려주세요") for p in POPULAR], "pop")
+        with right:
+            st.markdown('<div class="sec-head"><h2>공지사항</h2>'
+                        '<p class="sub">복지 관련 최신 소식입니다.</p></div>',
+                        unsafe_allow_html=True)
+            rows = ""
+            for i, (date, title) in enumerate(NOTICES):
+                new = '<span class="newtag">NEW</span>' if i == 0 else ""
+                rows += (f'<div class="notice"><span class="date">{date}</span>'
+                         f'<span class="t">{title}{new}</span></div>')
+            st.markdown(rows, unsafe_allow_html=True)
 
 
 def footer():
@@ -1062,17 +1161,8 @@ def main():
             ask_text(client, q.strip())
 
     with st.sidebar:
+        # 글자 크기·고대비는 화면 위(header)로 옮겼다 — 폰에선 사이드바가 닫혀 있어 못 찾는다.
         st.subheader("화면 설정")
-        st.caption("글자 크기")
-        b1, b2, b3 = st.columns(3)
-        if b1.button("가", use_container_width=True):
-            st.session_state["font_scale"] = 1.0; st.rerun()
-        if b2.button("가+", use_container_width=True):
-            st.session_state["font_scale"] = 1.18; st.rerun()
-        if b3.button("가++", use_container_width=True):
-            st.session_state["font_scale"] = 1.38; st.rerun()
-        st.session_state["high_contrast"] = st.toggle(
-            "고대비 모드", value=st.session_state.get("high_contrast", False))
         st.session_state["voice_mode"] = st.toggle(
             "음성으로 답변 듣기", value=st.session_state.get("voice_mode", False),
             help=f"로컬 TTS: {get_tts().backend or '사용 불가'}")
@@ -1117,9 +1207,9 @@ def main():
         hero_c = st.container()
         lower_c = st.container()
         with lower_c:
-            my_welfare_cards()   # 내 맞춤 복지(카드) — 프로필 기반 추천
+            my_welfare_cards(client)   # 내 맞춤 복지(카드) — 프로필 기반 추천
             category_cards(client)
-            popular_and_notices()
+            popular_and_notices(client)
             footer()
         with hero_c:
             hero(client)
