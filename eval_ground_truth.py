@@ -31,6 +31,8 @@ os.environ.setdefault("USE_AGENT", "0")
 from src import config  # noqa: E402
 from src.abnormal_signal import AbnormalSignalDetector, SentimentAnalyzer  # noqa: E402
 from src.rag_pipeline import RagPipeline  # noqa: E402
+from src.router import is_off_domain  # noqa: E402  (실서비스의 범위 밖 판정 경로)
+from src.llm import make_llm  # noqa: E402       (신호 LLM 심판 — USE_LLM_SIGNAL=1)
 
 EVAL_DIR = Path("data/eval")
 LEVELS = ["정상", "주의", "위험"]
@@ -49,8 +51,12 @@ def evaluate_rag(rag: RagPipeline, rows) -> dict:
     in_rows = [r for r in rows if r["scope"] == "in"]
     out_rows = [r for r in rows if r["scope"] == "out"]
 
+    import os
+    debug = os.environ.get("GT_DEBUG") not in (None, "", "0")
+
     hit1 = hit3 = 0
     per_topic = defaultdict(lambda: [0, 0, 0])   # topic -> [hit1, hit3, n]
+    misses = []
     for r in in_rows:
         kw = r["gold_keyword"]
         results = rag.retrieve(r["q"], top_k=3)
@@ -63,15 +69,32 @@ def evaluate_rag(rag: RagPipeline, rows) -> dict:
         t[0] += h1
         t[1] += h3
         t[2] += 1
+        if not h3:
+            misses.append({
+                "q": r["q"], "topic": r["topic"], "keyword": kw,
+                "top3": [(round(x.score, 3), x.source,
+                          x.text[:70].replace("\n", " ")) for x in results],
+            })
 
-    # 범위 밖(out): 최상위 점수가 관련성 게이트 아래면 '덮어쓰지 않고 거절' = 정답
+    # 범위 밖(out): 실서비스와 동일하게 ① 라우터가 off-domain으로 거르거나
+    #   ② 검색 최상위 점수가 관련성 게이트 아래이면 '지어내지 않고 거절' = 정답.
     gate = config.RAG_MIN_RELEVANCE
     refused = 0
     for r in out_rows:
+        if is_off_domain(r["q"]):
+            refused += 1
+            continue
         results = rag.retrieve(r["q"], top_k=3)
         top = results[0].score if results else 0.0
         if top < gate:
             refused += 1
+
+    if debug and misses:
+        print(f"\n  [GT_DEBUG] 검색 실패 {len(misses)}문항 — 상위 3개 실제 조각:")
+        for m in misses[:40]:
+            print(f"   ✗ ({m['topic']}) \"{m['q']}\"  기대 키워드='{m['keyword']}'")
+            for sc, src, snip in m["top3"]:
+                print(f"       [{sc}] ({src}) {snip}...")
 
     n_in = len(in_rows)
     n_out = len(out_rows)
@@ -99,14 +122,15 @@ def _prf(tp, fp, fn):
     return p, r, f
 
 
-def evaluate_signal(rows) -> dict:
+def evaluate_signal(rows, llm=None) -> dict:
     shared = SentimentAnalyzer()                     # 모델 1회만 로드
     # 혼동행렬: confusion[gold][pred]
     confusion = {g: {p: 0 for p in LEVELS} for g in LEVELS}
     bin_tp = bin_tn = bin_fp = bin_fn = 0
     details = []
     for row in rows:
-        det = AbnormalSignalDetector(sentiment=shared)   # 대화마다 히스토리 초기화
+        # llm 을 넘기면 USE_LLM_SIGNAL=1 일 때 LLM 심판까지 사용(실서비스와 동일).
+        det = AbnormalSignalDetector(sentiment=shared, llm=llm)   # 대화마다 초기화
         res = None
         for u in row["utterances"]:
             res = det.add_utterance(u)
@@ -180,7 +204,15 @@ def main():
     print("\n" + "=" * 66)
     print(" 2) 이상신호 감지 (정상/주의/위험 3단계)")
     print("=" * 66)
-    ss = evaluate_signal(sig_rows)
+    # USE_LLM_SIGNAL=1 이면 실서비스처럼 LLM 심판을 붙여 평가(문맥 위기 표현 포착).
+    llm = None
+    if config.USE_LLM_SIGNAL:
+        llm = make_llm()
+        print(f"  신호 LLM 심판: {type(llm).__name__}:{llm.model} "
+              f"({'ON' if llm.available else '사용 불가 → 규칙 기반'})")
+    else:
+        print("  신호 LLM 심판: OFF (규칙 기반만 — USE_LLM_SIGNAL=1 로 켜면 개선)")
+    ss = evaluate_signal(sig_rows, llm=llm)
     print("  혼동행렬 (행=정답, 열=예측):")
     print("            " + "".join(f"{p:>6}" for p in LEVELS))
     for g in LEVELS:
