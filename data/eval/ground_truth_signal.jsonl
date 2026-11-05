@@ -1,0 +1,19 @@
+{"label": "정상", "abnormal": false, "note": "일반 정보 질문", "utterances": ["기초연금 신청 방법 알려주세요", "지하철은 무료로 타나요?", "고맙습니다"]}
+{"label": "정상", "abnormal": false, "note": "서비스 문의", "utterances": ["치매 검진 무료인가요?", "방문 건강관리 신청은 어떻게 하나요?"]}
+{"label": "정상", "abnormal": false, "note": "일상 잡담", "utterances": ["오늘 날씨가 참 좋네요", "산책하기 좋은 날이에요"]}
+{"label": "정상", "abnormal": false, "note": "활동 관심", "utterances": ["복지관에 어떤 프로그램이 있나요?", "노인 일자리도 신청하고 싶어요"]}
+{"label": "정상", "abnormal": false, "note": "긍정 근황", "utterances": ["손주가 놀러 와서 즐거웠어요", "맛있는 거 많이 먹었어요"]}
+{"label": "정상", "abnormal": false, "note": "식사 일상", "utterances": ["경로식당은 어디 있나요?", "점심 먹으러 가야겠어요"]}
+{"label": "정상", "abnormal": false, "note": "짧은 인사", "utterances": ["안녕하세요", "날씨가 쌀쌀하네요"]}
+{"label": "주의", "abnormal": true, "note": "무릎 통증 반복", "utterances": ["요즘 무릎이 아파요", "어제도 무릎이 아팠어요", "무릎이 계속 아프고 힘들어요"]}
+{"label": "주의", "abnormal": true, "note": "허리 통증·불면", "utterances": ["허리가 아파요", "허리가 아파서 잠도 못 자요", "또 허리가 아프네요"]}
+{"label": "주의", "abnormal": true, "note": "외로움·우울", "utterances": ["너무 외롭고 쓸쓸해요", "매일 우울하고 힘들어요", "사는 게 의욕이 없어요"]}
+{"label": "주의", "abnormal": true, "note": "고립·식욕저하", "utterances": ["혼자 있으면 눈물이 나요", "요새 밥맛도 없고 기운이 없어요"]}
+{"label": "주의", "abnormal": true, "note": "불면·불안", "utterances": ["잠이 안 와요", "밤마다 외롭고 무서워요", "자꾸 서글퍼져요"]}
+{"label": "주의", "abnormal": true, "note": "만성 통증·소진", "utterances": ["몸이 여기저기 아파요", "병원 가도 나아지질 않아요", "사는 게 지치네요"]}
+{"label": "주의", "abnormal": true, "note": "기운없음 반복", "utterances": ["요즘 통 기운이 없어요", "하루종일 누워만 있어요", "입맛도 없어요"]}
+{"label": "위험", "abnormal": true, "note": "직접적 자살 표현", "utterances": ["사는 게 너무 힘들고 죽고 싶어요"]}
+{"label": "위험", "abnormal": true, "note": "삶을 끝내려는 의사", "utterances": ["이제 다 끝내고 싶어요", "혼자라 아무도 없어요"]}
+{"label": "위험", "abnormal": true, "note": "자해 암시", "utterances": ["살아서 뭐하나 싶어요", "약을 다 먹어버릴까 해요"]}
+{"label": "위험", "abnormal": true, "note": "소멸 욕구", "utterances": ["더 이상 버틸 수가 없어요", "세상에서 사라지고 싶어요"]}
+{"label": "위험", "abnormal": true, "note": "고립+위기", "utterances": ["아무도 날 찾지 않아요", "이렇게 혼자 죽는 건가 싶어요", "그냥 다 포기하고 싶어요"]}
