@@ -20,3 +20,7 @@ data/users.json
 eval/eval_results.csv
 eval/eval_report.md
 eval/eval_dataset.jsonl
+
+.DS_Store
+**/.DS_Store
+data/eval/results.json
