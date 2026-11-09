@@ -51,6 +51,17 @@ RAG_USE_RERANK = os.environ.get("RAG_RERANK", "1") != "0"   # set RAG_RERANK=0 t
 # off-topic < 0.1). Set RAG_MIN_RELEVANCE=0 to disable the gate.
 RAG_MIN_RELEVANCE = float(os.environ.get("RAG_MIN_RELEVANCE", "0.25"))
 
+# Exclude '명단/현황' directory spreadsheets from the index. These are address
+# lists (경로당·시설 현황) — pure location data, not Q&A content — and they flood
+# retrieval with many short, near-duplicate rows that crowd out real answers
+# (confirmed by GT_DEBUG). A file is skipped if its name contains any of these
+# substrings. They belong in a map/location lookup, not the semantic index.
+# Override with RAG_EXCLUDE_DOCS="a,b" (comma-separated); set "" to disable.
+# Takes effect on re-index (RAG_REINDEX=1).
+RAG_EXCLUDE_DOCS = [s.strip() for s in os.environ.get(
+    "RAG_EXCLUDE_DOCS", "현황,silverleisure,silverhome,silverhouse").split(",")
+    if s.strip()]
+
 # --- LLM backend ---------------------------------------------------------
 # Answer generation backend. Default is "openai" (a cloud LLM API; GPT-4o, or
 # any OpenAI-compatible endpoint such as Groq via OPENAI_BASE_URL). "gemini"

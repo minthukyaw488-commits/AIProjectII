@@ -116,3 +116,12 @@ LLM_BACKEND=ollama USE_LLM_SIGNAL=1 python eval_ground_truth.py
 > 요약: 낮은 수치의 상당 부분은 **코퍼스 범위(①)와 노이즈(②)** 문제이며, 일부는
 > **측정 방식(③)** 이슈였다. ground truth 평가가 이를 정량·구체적으로 짚어줬고,
 > 코퍼스 보강·노이즈 제거라는 개선 방향을 제시했다. (= 평가 기반 개발 루프)
+
+### 적용된 개선 (A: 노이즈 제거 / C: 코퍼스 보강)
+- **A** `config.RAG_EXCLUDE_DOCS` 신설 — 파일명에 `현황/silverleisure/silverhome/
+  silverhouse` 가 포함된 명단 스프레드시트를 색인 제외(위치 데이터는 지도/조회로 분리).
+  `RAG_EXCLUDE_DOCS=""` 로 비활성 가능. **재색인(RAG_REINDEX=1) 시 적용.**
+- **C** 코퍼스 공백 보강 — `data/welfare_docs/기초연금_안내.md`,
+  `에너지바우처_안내.md` 추가(대상·신청처·문의 요약, 소관 명시). 재색인 후
+  기초연금·에너지바우처 Hit@3 개선 기대.
+- **③** 치매 gold_keyword 완화 적용 → 치매안심 Hit@3 60%→100% 확인.

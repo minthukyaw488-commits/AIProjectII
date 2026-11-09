@@ -209,6 +209,9 @@ def load_documents(docs_dir: Path = config.WELFARE_DOCS_DIR) -> List[dict]:
     """Load every supported file in docs_dir. Returns [{source, text}]."""
     docs: List[dict] = []
     for path in sorted(docs_dir.glob("*")):
+        # 명단/현황 스프레드시트는 검색 노이즈 → 색인 제외(config.RAG_EXCLUDE_DOCS).
+        if any(tok in path.name for tok in config.RAG_EXCLUDE_DOCS):
+            continue
         if path.suffix.lower() == ".pdf":
             text = load_text_from_pdf(path)
         elif path.suffix.lower() in {".md", ".txt"}:
