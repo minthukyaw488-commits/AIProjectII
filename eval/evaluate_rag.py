@@ -40,6 +40,7 @@ OUT_DIR = ROOT / "eval"
 SELFTEST = os.environ.get("EVAL_SELFTEST") not in (None, "", "0")
 PER_TOPIC = int(os.environ.get("EVAL_PER_TOPIC", "2"))
 N_OUT = int(os.environ.get("EVAL_OUT", "5"))
+RECALL_MODE = os.environ.get("EVAL_RECALL", "llm")   # llm(의미, 기본) | string(엄격)
 
 
 # --------------------------------------------------------------------------
@@ -149,14 +150,33 @@ def context_precision(llm, q, contexts):
     return hit / len(contexts)
 
 
-def context_recall(facts, contexts):
-    """정답에 필요한 핵심 사실이 검색 자료에 들어왔는가(누락 적을수록 ↑).
-    정답지의 gold facts 중 자료에 나타난 비율(결정형·재현 가능)."""
-    if not facts:
+def _split_claims(ground_truth):
+    """정답(ground_truth) 문장을 ·,/ 기준으로 핵심 내용 단위로 쪼갠다(RAGAS 방식)."""
+    import re
+    parts = re.split(r"[·,/]", ground_truth or "")
+    return [p.strip() for p in parts if len(p.strip()) >= 2]
+
+
+def context_recall(llm, ground_truth, contexts, mode="llm"):
+    """정답에 필요한 내용이 검색 자료에 들어왔는가(누락 적을수록 ↑).
+
+    RAGAS 방식: 정답을 핵심 내용으로 쪼개, 각 내용이 '검색된 자료로 뒷받침되는'
+    비율을 센다. mode="llm"(기본)은 LLM 심판이라 동의어·패러프레이즈를 인정
+    (예: '주민센터'≈'행정복지센터'). mode="string"은 정확 문자열 일치(엄격·빠름)."""
+    claims = _split_claims(ground_truth)
+    if not claims:
         return None
-    joined = " ".join(contexts)
-    found = sum(1 for f in facts if f in joined)
-    return found / len(facts)
+    if not contexts:
+        return 0.0
+    if mode == "string":
+        joined = " ".join(contexts)
+        return sum(1 for c in claims if c in joined) / len(claims)
+    ctx = "\n\n".join(c[:500] for c in contexts)
+    hit = 0
+    for c in claims:
+        hit += int(_judge_yes(llm, f"[자료]\n{ctx}\n\n[정답의 한 내용] {c}\n\n"
+                              "이 내용이 자료에 담겨 있거나 자료로 뒷받침됩니까? '예'/'아니오'."))
+    return hit / len(claims)
 
 
 def faithfulness(llm, answer, contexts):
@@ -212,7 +232,7 @@ def run():
             cp = cr = faith = ar = None
         else:
             cp = context_precision(llm, q, contexts)
-            cr = context_recall(facts, contexts)
+            cr = context_recall(llm, gtruth, contexts, RECALL_MODE)
             faith = None if refused else faithfulness(llm, answer, contexts)
             ar = None if refused else answer_relevance(llm, q, answer)
 
@@ -301,6 +321,8 @@ def _write_outputs(records, dataset):
         "# RAG 평가 리포트 (RAGAS 방식)", "",
         f"- 생성 시각: {datetime.now():%Y-%m-%d %H:%M}",
         f"- 모드: {'SELFTEST(합성 스텁 — 숫자는 구조 점검용)' if SELFTEST else '실제 모델'}",
+        f"- Context Recall 방식: {RECALL_MODE} "
+        f"({'LLM 심판(동의어 인정)' if RECALL_MODE == 'llm' else '정확 문자열 일치'})",
         f"- 표본: {len(records)}개 (일반 {len(ins)} / 엣지 {len(outs)})", "",
         "## 평균 지표 (일반 질의)", "",
         "| 축 | 지표 | 평균 |", "|---|---|---|",
