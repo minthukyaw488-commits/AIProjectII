@@ -26,6 +26,8 @@ from typing import List, Optional
 from . import config
 from .abnormal_signal import AbnormalSignalDetector, SignalResult
 from .alerts import AlertDispatcher
+from .answer_guard import clean_answer, drop_unverified_phones
+from .crisis import CRISIS_REPLY, is_crisis
 from .llm import (ANSWER_SYSTEM_PROMPT, OFF_DOMAIN_REPLY, SMALLTALK_SYSTEM_PROMPT,
                   build_answer_prompt, make_llm)
 from .rag_pipeline import RagPipeline
@@ -69,6 +71,16 @@ class WelfareAssistant:
         # Layer 2 (abnormal signal) runs on every utterance, incl. small talk.
         signal = self.detector.add_utterance(question)
 
+        # 0) Crisis (자살·자해 암시) -> fixed safety reply (109/119/129), never the
+        #    LLM. A small model otherwise answers with an unrelated welfare list.
+        if is_crisis(question):
+            signal.crisis = True
+            signal.is_abnormal = True
+            signal.risk_level = "위험"
+            signal.reasons = list(signal.reasons) + ["위기 표현(자살·자해 암시)"]
+            return TurnResult(question, CRISIS_REPLY, [], signal,
+                              self._build_alert(signal))
+
         # 1) Greetings / small talk -> warm chatbot reply, no RAG, no refusal.
         if is_smalltalk(question):
             answer = self._smalltalk_reply(question)
@@ -91,6 +103,7 @@ class WelfareAssistant:
             answer, sources = self.agent.run_welfare(question)
         else:
             answer, sources = self._deterministic_answer(question)
+        answer = clean_answer(answer)
 
         return TurnResult(question, answer, sources, signal, self._maybe_alert(signal))
 
@@ -106,6 +119,7 @@ class WelfareAssistant:
         # 답변이 중간에 끊기지 않도록 생성 토큰 여유를 둔다(기본 130 → 256).
         answer = self.llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT,
                                    num_predict=256)
+        answer = drop_unverified_phones(answer, contexts)
         return answer, [r.source for r in retrieved]
 
     def _smalltalk_reply(self, question: str) -> str:

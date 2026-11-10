@@ -200,6 +200,8 @@ def inject_css():
         transition:transform .22s cubic-bezier(.2,.7,.3,1), box-shadow .22s;
         animation:fadeUp .55s both}}
       .cat-card:hover{{transform:translateY(-6px); box-shadow:0 30px 54px -18px var(--c)}}
+      a.cat-card, a.cat-card *, a.chip{{text-decoration:none !important}}
+      a.cat-card, a.cat-card *{{color:#fff !important}}
       .cat-card:nth-child(2){{animation-delay:.05s}} .cat-card:nth-child(3){{animation-delay:.1s}}
       .cat-card:nth-child(4){{animation-delay:.15s}} .cat-card:nth-child(5){{animation-delay:.2s}}
       .cat-card:nth-child(6){{animation-delay:.25s}}
@@ -298,7 +300,11 @@ def inject_css():
 
       /* ---- phone layout (PWA / mobile web) ------------------------------ */
       @media(max-width:640px){{
-        .gov-wrap{{padding:0 15px}}
+        /* Streamlit 기본 위젯(탭·입력창·버튼)이 화면 끝에 붙지 않도록 좌우 여백 */
+        .block-container{{padding-left:16px !important; padding-right:16px !important}}
+        .gov-wrap{{padding:0}}
+        .hero, .foot, .util{{margin-left:-16px; margin-right:-16px}}
+        .foot .gov-wrap, .util .gov-wrap{{padding:0 16px}}
         .sec{{padding:26px 0}}
         .sec h2{{font-size:1.42rem}} .sec .sub{{font-size:1rem; margin-bottom:18px}}
         /* nav links are decorative on a phone -> hide to reduce clutter */
@@ -576,6 +582,11 @@ _CONCERN = ("아파", "아프", "불편", "도와줘", "도와주", "힘들", "�
 _CRISIS = ("죽고싶", "죽어", "자살", "살기싫", "사라지고싶", "끝내고싶")
 
 
+def _is_crisis_text(t: str) -> bool:
+    from src.crisis import is_crisis
+    return is_crisis(t)
+
+
 def _concern_banner():
     """(2) 마지막 사용자 메시지에 통증·우울·위기 표현이 있으면 상담 안내 배너."""
     last = ""
@@ -586,7 +597,7 @@ def _concern_banner():
     if not last:
         return
     t = last.replace(" ", "")
-    crisis = any(k in t for k in _CRISIS)
+    crisis = _is_crisis_text(t) or any(k in t for k in _CRISIS)
     if crisis:
         st.markdown(
             '<div class="warn-banner crisis"><span class="ic">🆘</span>'
@@ -609,7 +620,7 @@ def _record_signal(q: str, r: dict | None = None):
     DB(별도 관리자 앱) 양쪽에 1건씩만 남긴다."""
     import time
     t = q.replace(" ", "")
-    crisis = any(k in t for k in _CRISIS)
+    crisis = _is_crisis_text(t) or any(k in t for k in _CRISIS)
     concern_kw = any(k in t for k in _CONCERN)
     pipe = bool(r and r.get("alert"))
     if not (crisis or concern_kw or pipe):
@@ -701,7 +712,12 @@ def _source_caption(sources) -> str:
 def _answer_for(client, q: str, attach: str | None = None):
     """질문 → 결과 dict. 인사/프로필/오류/저장·알림 처리(채팅 append 는 호출부에서).
     attach: 업로드한 사진·문서에서 읽은 글자(있으면 답변 근거로 함께 전달). 실패 시 None."""
-    if not attach and q.replace(" ", "").rstrip("!?.~ ") in _GREETINGS:
+    from src.crisis import CRISIS_REPLY, is_crisis
+    if is_crisis(q):
+        # 위기 표현 → LLM 을 거치지 않고 항상 같은 안전 안내(109·119·129).
+        r = {"question": q, "sources": [], "answer": CRISIS_REPLY,
+             "crisis": True, "alert": f"위기 표현 감지: “{q}”"}
+    elif not attach and q.replace(" ", "").rstrip("!?.~ ") in _GREETINGS:
         u = st.session_state.get("auth_user", "어르신")
         r = {"question": q, "sources": [],
              "answer": f"안녕하세요, {u} 님 😊 궁금하신 복지를 편하게 물어보세요."}
@@ -1425,7 +1441,8 @@ def notices_block():
         rows += (f'<div class="notice"><span class="date">{date}</span>'
                  f'<span class="t">{title}{new}</span></div>')
     st.markdown('<div class="sec"><div class="gov-wrap">'
-                '<h2>공지사항</h2><p class="sub">복지 관련 최신 소식입니다.</p>'
+                '<h2>공지사항</h2><p class="sub">시연용 예시 공지입니다. 실제 일정은 '
+                '주민센터·대전시 누리집에서 확인하세요.</p>'
                 f'{rows}</div></div>', unsafe_allow_html=True)
 
 
@@ -1433,14 +1450,14 @@ def footer():
     st.markdown("""
     <div class="foot"><div class="gov-wrap">
       <div class="cols">
-        <div><b>대전노인복지HUB</b>대전광역시 서구 둔산로 100<br>
-             노인복지과 042-000-0000</div>
+        <div><b>대전노인복지HUB</b>대전 어르신 복지 안내 AI<br>
+             (비공식 시연 서비스)</div>
         <div><b>바로가기</b>기초연금 · 노인맞춤돌봄<br>치매안심센터 · 방문건강관리</div>
-        <div><b>상담전화</b>복지상담 129<br>자살예방상담 109 (24시간)</div>
+        <div><b>상담전화</b>보건복지상담 129<br>자살예방상담 109 (24시간)<br>응급 119</div>
         <div><b>이용안내</b>개인정보처리방침<br>웹 접근성 안내 · 이용약관</div>
       </div>
-      <div class="copy">본 서비스는 모든 처리를 기기 내에서 수행하며 대화 내용을 외부로 전송하지 않습니다.
-        © 2026 Daejeon Welfare Portal (demo).</div>
+      <div class="copy">본 서비스는 학생 프로젝트 시연용이며 대전광역시 공식 사이트가 아닙니다.
+        AI 답변은 틀릴 수 있으니 신청 전 주민센터에서 꼭 확인하세요. © 2026 대전노인복지HUB (demo)</div>
     </div></div>
     """, unsafe_allow_html=True)
 

@@ -223,9 +223,11 @@ class WelfareAgent:
         """Final answer, always via the Korean answer model + ANSWER_SYSTEM_PROMPT
         on the gathered evidence (keeps answer quality independent of the agent
         model, which may be weaker/less Korean-native)."""
+        from .answer_guard import drop_unverified_phones
         prompt = build_answer_prompt(question, contexts)
-        return self.bot.llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT,
-                                     num_predict=num_predict)
+        answer = self.bot.llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT,
+                                       num_predict=num_predict)
+        return drop_unverified_phones(answer, contexts)
 
     # -- Phase 2: multi-intent planner ------------------------------------
     def _plan(self, question: str, verbose: bool = False) -> List[str]:
