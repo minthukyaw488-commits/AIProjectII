@@ -64,22 +64,40 @@ if _PW:
 
 
 # ── 헤더 + 새로고침 ───────────────────────────────────────────────────
+# 자동 새로고침은 streamlit_autorefresh(설치 시)를 우선 사용한다.
+# 이 방식은 '브라우저 전체 reload'가 아니라 '스크립트만 재실행'이라
+# JSON 데이터만 다시 읽고 화면 깜빡임(flicker)이 거의 없다.
+try:
+    from streamlit_autorefresh import st_autorefresh   # pip install streamlit-autorefresh
+    _HAS_AUTOREFRESH = True
+except Exception:                                       # 미설치 시 JS fallback
+    _HAS_AUTOREFRESH = False
+
 top = st.columns([4, 1, 1])
 top[0].markdown('<div class="ahead">🚨 사회복지사 모니터 — 어르신 이상신호</div>'
                 '<p style="color:#5c6b86;margin-top:-4px">어르신 대화에서 감지된 '
                 '통증·우울·위기 신호를 실시간으로 모니터링합니다.</p>',
                 unsafe_allow_html=True)
-if top[1].button("🔄 새로고침", use_container_width=True):
+# 1) 수동 새로고침 — 누르면 JSON에서 최신 데이터를 다시 읽고 UI 갱신
+if top[1].button("🔄 새로고침 (Refresh)", use_container_width=True):
     st.rerun()
 with top[2]:
-    auto = st.toggle("자동(10초)", value=False)
+    # 2) 자동 새로고침 토글 — 5초마다 데이터만 다시 읽음
+    auto = st.toggle("자동 새로고침 (Auto-refresh)", value=False,
+                     help="5초마다 최신 이상신호를 자동으로 불러옵니다.")
     if st.button("🗑 알림 비우기", use_container_width=True):
         db.clear_alerts()
         st.rerun()
+
+# 3) 깜빡임 최소화: 가능하면 스크립트만 재실행(st_autorefresh),
+#    라이브러리가 없으면 전체 reload로 대체
 if auto:
-    import streamlit.components.v1 as components
-    components.html("<script>setTimeout(function(){window.parent.location.reload()},"
-                    "10000)</script>", height=0)
+    if _HAS_AUTOREFRESH:
+        st_autorefresh(interval=5000, key="admin_autorefresh")   # 5초
+    else:
+        import streamlit.components.v1 as components
+        components.html("<script>setTimeout(function(){window.parent.location.reload()},"
+                        "5000)</script>", height=0)
 
 alerts = db.list_alerts(1000)          # 최신 → 오래된
 all_users = db.list_users()            # 가입/로그인한 모든 어르신

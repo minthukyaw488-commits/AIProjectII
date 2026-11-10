@@ -28,6 +28,7 @@ torch>=2.0                # backend for transformers / sentence-transformers
 # --- Demo UI (Step 5) ---
 gradio>=5.0               # 권장 UI (음성+텍스트 단일 입력창)
 streamlit>=1.39          # (선택) Streamlit UI
+streamlit-autorefresh>=1.0  # 관리자 대시보드 자동 새로고침(깜빡임 없는 재실행)
 # Local text-to-speech for voice-to-voice replies. macOS uses the built-in
 # `say` command (no install); pyttsx3 is the cross-platform fallback.
 pyttsx3>=2.90
