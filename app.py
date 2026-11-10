@@ -956,11 +956,12 @@ def _load_user_session(name: str):
 
 
 def _ask_href(q: str) -> str:
-    """카드·칩 링크 주소: ?u=<성함>&ask=<질문>.
-    새로고침돼도 ?u= 로 로그인이 유지되도록 성함을 함께 싣는다."""
+    """카드·칩 링크 주소: ?s=<서명토큰>&ask=<질문>.
+    새로고침돼도 로그인이 유지되도록 서버가 서명한 토큰을 싣는다
+    (성함을 그대로 실으면 주소만으로 남의 계정에 들어갈 수 있으므로 금지)."""
     from urllib.parse import quote
-    u = st.session_state.get("auth_user", "")
-    return f"?u={quote(u)}&ask={quote(q)}"
+    tok = st.session_state.get("auth_token", "")
+    return f"?s={quote(tok)}&ask={quote(q)}"
 
 
 def login_screen():
@@ -980,8 +981,11 @@ def login_screen():
 
     def _enter(name: str):
         """로그인 성공 처리: 세션 설정 + 저장된 프로필·지난 대화 불러오기."""
+        from src.auth_token import make_token
         _load_user_session(name)
-        st.query_params["u"] = name   # 새로고침(카드 클릭) 후에도 로그인 유지
+        tok = make_token(name)
+        st.session_state["auth_token"] = tok
+        st.query_params["s"] = tok    # 새로고침(카드 클릭) 후에도 로그인 유지(서명 토큰)
         st.rerun()
 
     tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
@@ -1596,7 +1600,10 @@ def admin_view(client):
         st.session_state["admin_alerts"] = []
         st.rerun()
     if alerts:
+        import html as _html
         for a in alerts[:30]:
+            a = {k: _html.escape(str(v)) if isinstance(v, str) else v
+                 for k, v in a.items()}     # 이름·메시지 HTML 주입 방지
             cls = "crisis" if a["level"] == "위기" else ""
             ic = "🆘" if a["level"] == "위기" else "⚠️"
             st.markdown(
@@ -1648,11 +1655,25 @@ def main():
     st.session_state.setdefault("admin_alerts", [])   # 키워드 감지 → 관리자 알림
 
     # 새로고침(카드·칩 클릭 = 전체 페이지 reload) 후에도 로그인 유지:
-    # Streamlit 세션은 reload 시 초기화되므로, URL 의 ?u=<성함> 으로 세션을 복원한다.
+    # Streamlit 세션은 reload 시 초기화되므로, URL 의 ?s=<서명토큰> 으로 세션을 복원한다.
+    # (?u=<성함> 은 위조가 쉬워 더 이상 받지 않는다.)
+    if "u" in st.query_params:
+        try:
+            del st.query_params["u"]
+        except Exception:
+            pass
     if not st.session_state.get("auth_user"):
-        _u = st.query_params.get("u")
+        from src.auth_token import verify_token
+        _tok = st.query_params.get("s")
+        _u = verify_token(_tok)
         if _u:
+            st.session_state["auth_token"] = _tok
             _load_user_session(_u)
+        elif _tok:
+            try:
+                del st.query_params["s"]    # 만료·위조 토큰 제거 → 로그인 화면
+            except Exception:
+                pass
 
     # 접속 흐름: 로그인 → 내 정보 입력 → (이후) 포털 화면.
     # 로그인·내 정보는 무거운 어시스턴트가 필요 없으므로 바로 뜬다.
@@ -1666,11 +1687,11 @@ def main():
     # 포털부터 어시스턴트 필요 — 지연 로딩(화면은 먼저 뜨고, 첫 질문에서만 준비).
     client = _LazyClient()
 
-    # A category card links to ?u=<성함>&ask=<question>; handle ask, keep u(로그인).
+    # A category card links to ?s=<token>&ask=<question>; handle ask, keep s(로그인).
     if "ask" in st.query_params:
         q = st.query_params["ask"]
         try:
-            del st.query_params["ask"]      # ask 만 제거, ?u=(로그인)는 유지
+            del st.query_params["ask"]      # ask 만 제거, ?s=(로그인)는 유지
         except Exception:
             pass
         if q.strip():
@@ -1719,9 +1740,9 @@ def main():
         if st.button("내 정보 수정", use_container_width=True):
             st.session_state["profile_done"] = False; st.rerun()
         if st.button("로그아웃", use_container_width=True):
-            for k in ("auth_user", "profile", "profile_done"):
+            for k in ("auth_user", "auth_token", "profile", "profile_done"):
                 st.session_state.pop(k, None)
-            st.query_params.clear()        # ?u= 로그인 표시 제거
+            st.query_params.clear()        # ?s= 로그인 토큰 제거
             st.rerun()
 
     inject_css()

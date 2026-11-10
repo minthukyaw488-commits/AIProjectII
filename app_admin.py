@@ -48,19 +48,27 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-# ── (선택) 관리자 비밀번호 ────────────────────────────────────────────
+# ── 관리자 비밀번호 (필수) ────────────────────────────────────────────
+# 어르신 개인정보·위기 신호가 보이는 화면이므로 비밀번호 없이는 열지 않는다.
+import hmac
+import html as _html
+
 _PW = os.environ.get("ADMIN_PW")
-if _PW:
-    if not st.session_state.get("admin_ok"):
-        st.markdown('<div class="ahead">🔒 관리자 로그인</div>', unsafe_allow_html=True)
-        pw = st.text_input("관리자 비밀번호", type="password")
-        if st.button("로그인", type="primary"):
-            if pw == _PW:
-                st.session_state["admin_ok"] = True
-                st.rerun()
-            else:
-                st.error("비밀번호가 올바르지 않습니다.")
-        st.stop()
+if not _PW:
+    st.error("관리자 비밀번호(ADMIN_PW)가 설정되지 않아 화면을 열 수 없습니다.\n\n"
+             "실행 예:  ADMIN_PW=원하는비밀번호 streamlit run app_admin.py "
+             "--server.port 8502")
+    st.stop()
+if not st.session_state.get("admin_ok"):
+    st.markdown('<div class="ahead">🔒 관리자 로그인</div>', unsafe_allow_html=True)
+    pw = st.text_input("관리자 비밀번호", type="password")
+    if st.button("로그인", type="primary"):
+        if hmac.compare_digest(pw.encode("utf-8"), _PW.encode("utf-8")):
+            st.session_state["admin_ok"] = True
+            st.rerun()
+        else:
+            st.error("비밀번호가 올바르지 않습니다.")
+    st.stop()
 
 
 # ── 헤더 + 새로고침 ───────────────────────────────────────────────────
@@ -85,9 +93,14 @@ with top[2]:
     # 2) 자동 새로고침 토글 — 5초마다 데이터만 다시 읽음
     auto = st.toggle("자동 새로고침 (Auto-refresh)", value=False,
                      help="5초마다 최신 이상신호를 자동으로 불러옵니다.")
-    if st.button("🗑 알림 비우기", use_container_width=True):
+    # 전체 삭제는 되돌릴 수 없으므로 확인 체크 후에만 실행
+    def _clear_all():
         db.clear_alerts()
-        st.rerun()
+        st.session_state["confirm_clear"] = False
+
+    _confirm = st.checkbox("모든 알림 삭제 확인", key="confirm_clear")
+    st.button("🗑 알림 비우기", use_container_width=True, disabled=not _confirm,
+              on_click=_clear_all)
 
 # 3) 깜빡임 최소화: 가능하면 스크립트만 재실행(st_autorefresh),
 #    라이브러리가 없으면 전체 reload로 대체
@@ -167,11 +180,12 @@ for name in sorted(view_users, key=_rank, reverse=True):
     else:
         cls, badge = "ok", '<span class="badge ok">정상</span>'
     latest = items[0] if items else None
-    body = (f'<div class="meta">최근 {latest.get("time","")} · {latest.get("reason","")}</div>'
-            f'<div class="msg">“{latest.get("message","")}”</div>') if latest else \
+    esc = lambda v: _html.escape(str(v or ""))          # 이름·메시지 HTML 주입 방지
+    body = (f'<div class="meta">최근 {esc(latest.get("time"))} · {esc(latest.get("reason"))}</div>'
+            f'<div class="msg">“{esc(latest.get("message"))}”</div>') if latest else \
            '<div class="meta">감지된 이상신호 없음 (정상 모니터 중)</div>'
     st.markdown(
-        f'<div class="ucard {cls}"><div class="u">{name} 님{badge}'
+        f'<div class="ucard {cls}"><div class="u">{esc(name)} 님{badge}'
         f'<span style="font-weight:600;color:#5c6b86;font-size:.9rem"> · 신호 '
         f'{len(items)}건</span></div>{body}</div>', unsafe_allow_html=True)
     if items:

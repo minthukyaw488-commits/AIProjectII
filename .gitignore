@@ -30,3 +30,6 @@ data/feedback.jsonl
 
 # 이상신호 알림(파일 폴백)
 data/alerts.json
+
+# 로그인 토큰 서명 비밀키(자동 생성)
+data/.app_secret
