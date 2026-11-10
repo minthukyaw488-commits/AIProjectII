@@ -745,6 +745,7 @@ def _md_to_html(text: str) -> str:
     import html as _html
     import re
     t = _html.escape(text or "")
+    t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t)              # [글자](링크) → 글자만
     t = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", t)     # **굵게**
     t = re.sub(r"(?m)^\s*[-*•]\s+", "• ", t)                    # 불릿 → •
     t = t.replace("\n\n", "<br><br>").replace("\n", "<br>")     # 줄바꿈=여백
