@@ -24,3 +24,6 @@ eval/eval_dataset.jsonl
 .DS_Store
 **/.DS_Store
 data/eval/results.json
+
+# 사용자 피드백 로그(로컬)
+data/feedback.jsonl
