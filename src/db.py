@@ -263,6 +263,23 @@ def backend_name() -> str:
     return "mysql" if (_USE_MYSQL and _conn() is not None) else "file(json)"
 
 
+def list_users() -> list[str]:
+    """가입/로그인한 모든 어르신 이름 목록(관리자 모니터용)."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute("SELECT name FROM users ORDER BY name")
+                    return [r["name"] for r in cur.fetchall() if r.get("name")]
+            except Exception:                     # noqa: BLE001
+                return []
+            finally:
+                c.close()
+        names = set(_load_json(_USERS_JSON).keys()) | set(_load_json(_PROFILE_JSON).keys())
+        return sorted(n for n in names if n)
+
+
 # ── 이상신호 알림(관리자 모니터용) ────────────────────────────────────
 _ALERTS_JSON = os.path.join(_DATA, "alerts.json")
 _ALERTS_DDL = (

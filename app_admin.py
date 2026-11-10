@@ -42,6 +42,8 @@ st.markdown(f"""
     padding:2px 10px;margin-left:6px}}
   .badge.c {{background:#fde7ea;color:{RED}}}
   .badge.w {{background:#fff4e6;color:#b45309}}
+  .badge.ok {{background:#e6f4ea;color:#1f7a43}}
+  .ucard.ok {{border-left-color:#1f7a43}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -76,68 +78,98 @@ if auto:
                     "10000)</script>", height=0)
 
 alerts = db.list_alerts(1000)          # 최신 → 오래된
+all_users = db.list_users()            # 가입/로그인한 모든 어르신
+
+# 어르신별 알림 묶기
+by_user = defaultdict(list)
+for a in alerts:
+    by_user[a.get("name") or "(이름없음)"].append(a)
+
+# 모니터 대상 = 로그인한 모든 어르신 ∪ 알림이 있는 이름
+monitored = sorted(set(all_users) | set(by_user.keys()))
 
 # ── 요약 지표 ─────────────────────────────────────────────────────────
 n_crisis = sum(1 for a in alerts if a.get("level") == "위기")
-users = sorted({a.get("name") for a in alerts if a.get("name")})
+n_risk_users = sum(1 for u in monitored if by_user.get(u))
 m = st.columns(4)
-m[0].metric("총 이상신호", f"{len(alerts)}건")
-m[1].metric("🆘 위기", f"{n_crisis}건")
-m[2].metric("⚠️ 주의", f"{len(alerts) - n_crisis}건")
-m[3].metric("모니터 대상", f"{len(users)}명")
-st.caption(f"저장소: {db.backend_name()}")
+m[0].metric("모니터 대상", f"{len(monitored)}명")
+m[1].metric("🆘 위기 신호", f"{n_crisis}건")
+m[2].metric("⚠️ 주의 신호", f"{len(alerts) - n_crisis}건")
+m[3].metric("신호 발생 어르신", f"{n_risk_users}명")
+st.caption(f"저장소: {db.backend_name()} · 총 신호 {len(alerts)}건")
 
-if not alerts:
-    st.info("아직 감지된 이상신호가 없습니다. 어르신 앱에서 대화가 쌓이면 여기에 표시됩니다.")
+if not monitored:
+    st.info("아직 로그인한 어르신이 없습니다. 어르신 앱에서 가입·대화가 쌓이면 "
+            "여기에 표시됩니다.")
     st.stop()
 
 # ── 필터 (사이드바) ───────────────────────────────────────────────────
 with st.sidebar:
     st.subheader("필터")
-    sel_users = st.multiselect("어르신(이름)", users, default=users)
-    sel_level = st.radio("위험도", ["전체", "위기만", "주의만"], index=0)
+    sel_users = st.multiselect("어르신(이름)", monitored, default=monitored)
+    view_users = sel_users or monitored            # 비어 있으면 전체 표시
+    sel_level = st.radio("보기", ["전체", "신호 있는 분만", "위기만"], index=0)
 
-fil = [a for a in alerts if a.get("name") in sel_users]
-if sel_level == "위기만":
-    fil = [a for a in fil if a.get("level") == "위기"]
-elif sel_level == "주의만":
-    fil = [a for a in fil if a.get("level") == "주의"]
 
-# ── 어르신별 모니터 (개별) ────────────────────────────────────────────
+def _ulevel(items):
+    if any(x.get("level") == "위기" for x in items):
+        return "위기"
+    if items:
+        return "주의"
+    return "정상"
+
+
+# ── 어르신별 모니터 (로그인한 모든 어르신) ────────────────────────────
 st.markdown("### 👵 어르신별 모니터")
-by_user = defaultdict(list)
-for a in fil:
-    by_user[a.get("name") or "(이름없음)"].append(a)
 
-# 정렬: 위기 보유 → 신호 많은 → 최근 순
-def _rank(items):
-    has_c = any(x.get("level") == "위기" for x in items)
-    return (has_c, len(items), items[0].get("time", ""))
+def _rank(u):
+    items = by_user.get(u, [])
+    lv = {"위기": 2, "주의": 1, "정상": 0}[_ulevel(items)]
+    latest = items[0].get("time", "") if items else ""
+    return (lv, len(items), latest)
 
 
-for name in sorted(by_user, key=lambda n: _rank(by_user[n]), reverse=True):
-    items = by_user[name]
-    crisis = any(x.get("level") == "위기" for x in items)
-    latest = items[0]
-    badge = ('<span class="badge c">위기</span>' if crisis
-             else '<span class="badge w">주의</span>')
+shown = 0
+for name in sorted(view_users, key=_rank, reverse=True):
+    items = by_user.get(name, [])
+    lv = _ulevel(items)
+    if sel_level == "위기만" and lv != "위기":
+        continue
+    if sel_level == "신호 있는 분만" and not items:
+        continue
+    shown += 1
+    if lv == "위기":
+        cls, badge = "crisis", '<span class="badge c">위기</span>'
+    elif lv == "주의":
+        cls, badge = "", '<span class="badge w">주의</span>'
+    else:
+        cls, badge = "ok", '<span class="badge ok">정상</span>'
+    latest = items[0] if items else None
+    body = (f'<div class="meta">최근 {latest.get("time","")} · {latest.get("reason","")}</div>'
+            f'<div class="msg">“{latest.get("message","")}”</div>') if latest else \
+           '<div class="meta">감지된 이상신호 없음 (정상 모니터 중)</div>'
     st.markdown(
-        f'<div class="ucard {"crisis" if crisis else ""}">'
-        f'<div class="u">{name} 님{badge}'
+        f'<div class="ucard {cls}"><div class="u">{name} 님{badge}'
         f'<span style="font-weight:600;color:#5c6b86;font-size:.9rem"> · 신호 '
-        f'{len(items)}건</span></div>'
-        f'<div class="meta">최근 {latest.get("time","")} · {latest.get("reason","")}</div>'
-        f'<div class="msg">“{latest.get("message","")}”</div></div>',
-        unsafe_allow_html=True)
-    with st.expander(f"{name} 님 전체 신호 {len(items)}건 보기"):
-        st.dataframe(
-            [{"시각": x.get("time"), "위험도": x.get("level"),
-              "메시지": x.get("message"), "근거": x.get("reason")} for x in items],
-            use_container_width=True, hide_index=True)
+        f'{len(items)}건</span></div>{body}</div>', unsafe_allow_html=True)
+    if items:
+        with st.expander(f"{name} 님 전체 신호 {len(items)}건 보기"):
+            st.dataframe(
+                [{"시각": x.get("time"), "위험도": x.get("level"),
+                  "메시지": x.get("message"), "근거": x.get("reason")} for x in items],
+                use_container_width=True, hide_index=True)
+if shown == 0:
+    st.caption("조건에 해당하는 어르신이 없습니다.")
 
 # ── 전체 타임라인 ─────────────────────────────────────────────────────
-st.markdown("### 🕒 전체 타임라인")
-st.dataframe(
-    [{"시각": a.get("time"), "어르신": a.get("name"), "위험도": a.get("level"),
-      "메시지": a.get("message"), "근거": a.get("reason")} for a in fil],
-    use_container_width=True, hide_index=True)
+st.markdown("### 🕒 전체 이상신호 타임라인")
+tl = [a for a in alerts if a.get("name") in view_users]
+if sel_level == "위기만":
+    tl = [a for a in tl if a.get("level") == "위기"]
+if tl:
+    st.dataframe(
+        [{"시각": a.get("time"), "어르신": a.get("name"), "위험도": a.get("level"),
+          "메시지": a.get("message"), "근거": a.get("reason")} for a in tl],
+        use_container_width=True, hide_index=True)
+else:
+    st.caption("표시할 이상신호가 없습니다.")
