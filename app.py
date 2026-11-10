@@ -1285,12 +1285,13 @@ def chat_area(client):
     st.markdown('<p class="sub" style="margin-top:-4px">궁금하신 복지를 편하게 물어보세요. '
                 '대전 어르신 맞춤으로 답해 드립니다.</p>', unsafe_allow_html=True)
     st.session_state["use_rag"] = True   # 항상 RAG 사용(문서 근거)
-    # 레이아웃: 빠른선택 칩 → 분야별 빠른질문 → 경고배너 → 지난대화 → 스트리밍 → 입력
-    quick_replies(client)          # 한 번 누르면 즉시 전송되는 칩(처음·서비스목록·온라인신청)
-    quick_actions(client)          # (3) 어르신용 빠른 질문 버튼(분야→질문)
+    # 레이아웃: 대화(위에서 크게) → 빠른버튼 → 입력(아래). 빠른 칩/분야 버튼을
+    # 입력창 바로 위로 내려, 대화 내용이 화면 위쪽에서 잘 보이게 한다.
     _concern_banner()              # 통증·위기 표현 시 상담 안내 배너
-    hist_slot = st.container()     # 지난 대화(말풍선 + 출처 캡션)
+    hist_slot = st.container()     # 지난 대화(말풍선 + 출처 캡션) — 위
     live_slot = st.container()     # 새 답변이 토큰 단위로 스트리밍되는 자리
+    quick_replies(client)          # 즉시 전송 칩(처음·서비스목록·온라인신청) — 입력 바로 위
+    quick_actions(client)          # 분야→질문 빠른 버튼 — 입력 바로 위
     with st.form("ai_text", clear_on_submit=True):
         tc1, tc2 = st.columns([5, 1])
         q = tc1.text_input("입력", placeholder="궁금하신 내용을 글로 입력하셔도 됩니다",
