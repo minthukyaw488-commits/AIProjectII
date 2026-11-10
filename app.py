@@ -334,6 +334,9 @@ def inject_css():
       div[data-testid="stButton"] > button:active{{transform:translateY(0) scale(.98)}}
       .chip:active{{transform:scale(.96)}}
 
+      /* 마크다운 렌더(굵게/불릿) — 어르신 가독성 */
+      .bub.bot strong{{color:{navy}; font-weight:800}}
+      .bub.bot{{line-height:1.6}}
       /* 스트리밍 답변 위 '복지 도우미' 라벨 */
       .bub-label{{font-size:.78rem; font-weight:800; color:{accent};
         margin:6px 2px 2px; letter-spacing:.01em}}
@@ -715,11 +718,26 @@ def _answer_for(client, q: str):
     return r
 
 
+def _md_to_html(text: str) -> str:
+    """답변의 마크다운을 안전하게 HTML 로 변환(먼저 escape → 허용 서식만 추가).
+    **굵게**, 불릿(- · *), 줄바꿈(여백)을 렌더해 어르신이 읽기 쉽게 한다."""
+    import html as _html
+    import re
+    t = _html.escape(text or "")
+    t = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", t)     # **굵게**
+    t = re.sub(r"(?m)^\s*[-*•]\s+", "• ", t)                    # 불릿 → •
+    t = t.replace("\n\n", "<br><br>").replace("\n", "<br>")     # 줄바꿈=여백
+    return t
+
+
 def _bubble(role: str, text: str):
     import html as _html
-    side, who = ("r", "user") if role == "user" else ("l", "bot")
+    if role == "user":
+        side, who, body = "r", "user", _html.escape(text)
+    else:
+        side, who, body = "l", "bot", _md_to_html(text)        # 봇 답변은 마크다운 렌더
     st.markdown(f'<div class="chat" style="padding:2px 0"><div class="row {side}">'
-                f'<div class="bub {who}">{_html.escape(text)}</div></div></div>',
+                f'<div class="bub {who}">{body}</div></div></div>',
                 unsafe_allow_html=True)
 
 
