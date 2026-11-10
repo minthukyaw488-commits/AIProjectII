@@ -71,7 +71,11 @@ top[0].markdown('<div class="ahead">🚨 사회복지사 모니터 — 어르신
                 unsafe_allow_html=True)
 if top[1].button("🔄 새로고침", use_container_width=True):
     st.rerun()
-auto = top[2].toggle("자동(10초)", value=False)
+with top[2]:
+    auto = st.toggle("자동(10초)", value=False)
+    if st.button("🗑 알림 비우기", use_container_width=True):
+        db.clear_alerts()
+        st.rerun()
 if auto:
     import streamlit.components.v1 as components
     components.html("<script>setTimeout(function(){window.parent.location.reload()},"

@@ -319,6 +319,22 @@ def save_alert(name: str, message: str, level: str, reason: str = ""):
         _save_json(_ALERTS_JSON, store)
 
 
+def clear_alerts():
+    """저장된 이상신호 알림을 모두 비운다(관리자가 확인 후 초기화)."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute("DELETE FROM alerts")
+                return
+            except Exception:                     # noqa: BLE001
+                pass
+            finally:
+                c.close()
+        _save_json(_ALERTS_JSON, {"alerts": []})
+
+
 def list_alerts(limit: int = 500) -> list[dict]:
     """최근 이상신호 알림(최신 → 오래된). 각 항목: name·message·level·reason·time."""
     with _lock:

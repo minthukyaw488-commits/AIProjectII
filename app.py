@@ -601,26 +601,31 @@ def _concern_banner():
             '아래 버튼으로 관련 복지도 물어보세요.</div></div>', unsafe_allow_html=True)
 
 
-def _maybe_admin_alert(q: str):
-    """사용자 메시지에 통증·불편·위기 키워드가 있으면 관리자 대시보드로 알림을
-    올린다(이름·메시지 원문·시각). 메시지당 1회만 호출되도록 상담 시작 지점에서 부른다."""
+def _record_signal(q: str, r: dict | None = None):
+    """사용자 메시지의 이상신호를 '메시지당 1건만' 기록한다(관리자 모니터용).
+
+    키워드 감지(아파·불편·죽고싶 등)와 대화 분석(파이프라인 alert)을 하나로 합쳐,
+    한 메시지가 두 번 저장되지 않도록 한다(중복 방지). 세션(앱 내 관리자 토글)과
+    DB(별도 관리자 앱) 양쪽에 1건씩만 남긴다."""
+    import time
     t = q.replace(" ", "")
     crisis = any(k in t for k in _CRISIS)
-    if not (crisis or any(k in t for k in _CONCERN)):
+    concern_kw = any(k in t for k in _CONCERN)
+    pipe = bool(r and r.get("alert"))
+    if not (crisis or concern_kw or pipe):
         return
-    import time
-    hit = [k for k in (_CRISIS + _CONCERN) if k in t]
     name = st.session_state.get("auth_user", "어르신")
-    level = "위기" if crisis else "주의"
+    level = "위기" if (crisis or (r and r.get("crisis"))) else "주의"
+    hit = [k for k in (_CRISIS + _CONCERN) if k in t]
+    reason = ("키워드: " + ", ".join(hit[:3])) if hit else "대화 분석 이상신호"
     st.session_state.setdefault("admin_alerts", []).insert(0, {
-        "name": name, "message": q,                     # 메시지 원문 그대로
+        "name": name, "message": q,
         "time": time.strftime("%Y-%m-%d %H:%M:%S"),
         "level": level, "keyword": ", ".join(hit[:3]),
     })
-    # DB 에도 저장 → 별도 관리자 앱(app_admin.py)이 모든 어르신을 모니터
     try:
         from src import db
-        db.save_alert(name, q, level, "키워드: " + ", ".join(hit[:3]))
+        db.save_alert(name, q, level, reason)     # DB 1건
     except Exception:
         pass
 
@@ -724,13 +729,6 @@ def _answer_for(client, q: str):
     if r.get("alert"):
         st.session_state["alerts"].insert(
             0, ("긴급" if r.get("crisis") else "주의", r["alert"]))
-        # 대화 분석으로 감지된 이상신호도 관리자 DB 에 저장
-        try:
-            from src import db
-            db.save_alert(st.session_state.get("auth_user", "어르신"), q,
-                          "위기" if r.get("crisis") else "주의", "대화 분석 이상신호")
-        except Exception:
-            pass
     st.session_state["state"] = r
     return r
 
@@ -824,10 +822,10 @@ def _render_history(messages):
 def ask_and_stream(client, q: str):
     """(1) 답변을 st.write_stream 으로 토큰 단위 스트리밍 + (2) st.caption 출처."""
     _bubble("user", q)
-    _maybe_admin_alert(q)       # 키워드 감지 시 관리자 대시보드로 알림(메시지당 1회)
     r = _answer_for(client, q)
     if not r:
         return
+    _record_signal(q, r)        # 이상신호 기록(키워드+대화분석 합쳐 메시지당 1건)
     st.markdown('<div class="bub-label">복지 도우미</div>', unsafe_allow_html=True)
     st.write_stream(_stream_tokens(r["answer"]))          # (1) 토큰 스트리밍
     cap = _source_caption(r.get("sources"))
