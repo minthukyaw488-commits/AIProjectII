@@ -954,6 +954,14 @@ def _load_user_session(name: str):
         pass
 
 
+def _logout():
+    """로그아웃 → 로그인 화면으로. 세션·URL(?u=) 모두 비워 새 계정으로 로그인 가능."""
+    for k in ("auth_user", "profile", "profile_done", "chat", "pending_q"):
+        st.session_state.pop(k, None)
+    st.query_params.clear()
+    st.rerun()
+
+
 def _ask_href(q: str) -> str:
     """카드·칩 링크 주소: ?u=<성함>&ask=<질문>.
     새로고침돼도 ?u= 로 로그인이 유지되도록 성함을 함께 싣는다."""
@@ -1132,9 +1140,17 @@ def header_nav(client):
             st.session_state["pending_q"] = q.strip()   # 상담 탭에서 스트리밍 답변
             st.session_state["tab"] = "talk"
             st.rerun()
-    n.markdown('<div class="menu"><span>복지서비스</span><span>건강·의료</span>'
-               '<span>어르신 돌봄</span><span>공지사항</span><span>상담·문의</span></div>',
-               unsafe_allow_html=True)
+    with n:
+        st.markdown('<div class="menu"><span>복지서비스</span><span>건강·의료</span>'
+                    '<span>어르신 돌봄</span><span>공지사항</span><span>상담·문의</span></div>',
+                    unsafe_allow_html=True)
+        uu = st.session_state.get("auth_user", "")
+        hc1, hc2 = st.columns([1.4, 1], vertical_alignment="center")
+        hc1.markdown(f'<div style="text-align:right;color:#5c6b86;font-size:.9rem;'
+                     f'font-weight:700">👤 {uu} 님</div>', unsafe_allow_html=True)
+        if hc2.button("로그아웃", key="hdr_logout", use_container_width=True,
+                      help="로그인 화면으로 돌아가 다른 계정으로 로그인합니다."):
+            _logout()
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -1718,10 +1734,7 @@ def main():
         if st.button("내 정보 수정", use_container_width=True):
             st.session_state["profile_done"] = False; st.rerun()
         if st.button("로그아웃", use_container_width=True):
-            for k in ("auth_user", "profile", "profile_done"):
-                st.session_state.pop(k, None)
-            st.query_params.clear()        # ?u= 로그인 표시 제거
-            st.rerun()
+            _logout()
 
     inject_css()
     inject_pwa()
