@@ -340,19 +340,6 @@ def inject_css():
       /* 스트리밍 답변 위 '복지 도우미' 라벨 */
       .bub-label{{font-size:.78rem; font-weight:800; color:{accent};
         margin:6px 2px 2px; letter-spacing:.01em}}
-      /* 피드백 + Generative-UI 액션 버튼 — 작고 가볍게 */
-      [class*="st-key-acts"]{{margin:-2px 2px 10px}}
-      [class*="st-key-acts"] div[data-testid="stButton"] > button{{
-        min-height:38px !important; padding:.35rem .6rem !important;
-        font-size:.92rem !important; border-radius:10px !important;
-        border:1px solid {card_bd} !important; background:{surface} !important;
-        color:{navy} !important; font-weight:600 !important}}
-      [class*="st-key-acts"] div[data-testid="stButton"] > button:hover{{
-        border-color:{accent} !important; background:#f2f6ff !important}}
-      [class*="st-key-acts"] a[data-testid="stLinkButton"],
-      [class*="st-key-acts"] div[data-testid="stLinkButton"] a{{
-        min-height:38px !important; font-size:.92rem !important}}
-      .fb-done{{color:{muted}; font-size:.9rem; font-weight:600}}
       /* (1) RAG 답변 아래 근거 출처 칩 */
       .cite{{display:flex; gap:7px; flex-wrap:wrap; align-items:center;
         margin:-4px 2px 2px; font-size:.84rem; color:{muted}}}
@@ -741,99 +728,14 @@ def _bubble(role: str, text: str):
                 unsafe_allow_html=True)
 
 
-# -- 피드백 버튼(👍/👎) + 간단 Generative-UI(답변 기반 액션) --------------------
-_CAT_KW = {"💰 기초연금": ("기초연금", "연금"), "🧠 치매 검사": ("치매",),
-           "🚇 경로우대": ("경로", "지하철", "교통", "무임"),
-           "🚨 응급안전": ("응급", "화재", "안전"),
-           "💬 마음 상담": ("우울", "외로", "상담", "마음", "자살", "힘들")}
-
-
-def _match_cat(q: str):
-    for cat, kws in _CAT_KW.items():
-        if any(k in q for k in kws):
-            return cat
-    return None
-
-
-def _log_feedback(q: str, val: str):
-    """피드백을 파일에 기록(평가·개선용). 실패해도 조용히 넘어간다."""
-    try:
-        import json
-        import time
-        from pathlib import Path
-        p = Path("data/feedback.jsonl")
-        p.parent.mkdir(parents=True, exist_ok=True)
-        rec = {"ts": time.strftime("%Y-%m-%d %H:%M:%S"),
-               "user": st.session_state.get("auth_user"), "q": q, "feedback": val}
-        with p.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-
-
-def _gen_actions(user_q: str, answer: str):
-    """간단 Generative-UI: 답변 내용에 따라 보여줄 액션 버튼을 생성한다.
-    - 답변에 기관이 언급되면 '가까운 기관 찾기'(지도 검색 링크)
-    - 같은 분야의 다른 질문을 후속 질문으로 1개 추천"""
-    import urllib.parse as _up
-    acts = []
-    a = answer or ""
-    for term in ("치매안심센터", "행정복지센터", "주민센터", "보건소",
-                 "노인복지관", "복지관", "국민연금공단"):
-        if term in a:
-            dist = (st.session_state.get("profile") or {}).get("district") or ""
-            qs = _up.quote(f"대전 {dist} {term}".replace("  ", " ").strip())
-            acts.append(("📍 가까운 " + term, "link", f"https://map.kakao.com/?q={qs}"))
-            break
-    cat = _match_cat(user_q)
-    if cat:
-        for faq in _QUICK_FAQ[cat]:
-            if faq != user_q:
-                acts.append(("❓ " + faq, "ask", faq))
-                break
-    return acts[:3]
-
-
-def _answer_actions(idx: int, user_q: str, answer: str):
-    """봇 답변 아래: 피드백(👍/👎) + Generative-UI 액션 + 상담 전화 안내."""
-    fb = st.session_state.setdefault("feedback", {})
-    given = fb.get(idx)
-    with st.container(key=f"acts{idx}"):
-        acts = _gen_actions(user_q, answer)      # Generative-UI 액션 버튼
-        if acts:
-            cols = st.columns(len(acts))
-            for j, (label, kind, payload) in enumerate(acts):
-                if kind == "link":
-                    cols[j].link_button(label, payload, use_container_width=True)
-                elif cols[j].button(label, key=f"act{idx}_{j}", use_container_width=True):
-                    st.session_state["pending_q"] = payload
-                    st.rerun()
-        fcols = st.columns([1, 1, 5])            # 피드백 + 전화 안내
-        if given:
-            fcols[0].markdown('<span class="fb-done">🙏 감사합니다</span>',
-                              unsafe_allow_html=True)
-        else:
-            if fcols[0].button("👍", key=f"fbu{idx}", help="도움이 됐어요"):
-                fb[idx] = "up"
-                _log_feedback(user_q, "up")
-                st.rerun()
-            if fcols[1].button("👎", key=f"fbd{idx}", help="아쉬웠어요"):
-                fb[idx] = "down"
-                _log_feedback(user_q, "down")
-                st.rerun()
-        fcols[2].caption("📞 복지상담 129 · 자살예방 109(24시간)")
-
-
 def _render_history(messages):
-    """지난 대화를 말풍선으로. (2) 출처 캡션 + 피드백/Generative-UI 액션."""
-    for i, m in enumerate(messages):
+    """지난 대화를 말풍선으로. 봇 답변 아래에 출처 캡션."""
+    for m in messages:
         _bubble(m[0], m[1])
         if m[0] == "bot":
             cap = _source_caption(m[3] if len(m) > 3 else [])
             if cap:
                 st.caption(cap)
-            uq = messages[i - 1][1] if i > 0 and messages[i - 1][0] == "user" else ""
-            _answer_actions(i, uq, m[1])
 
 
 def ask_and_stream(client, q: str):
