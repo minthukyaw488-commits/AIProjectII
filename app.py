@@ -355,16 +355,16 @@ def inject_css():
         margin:-4px 2px 2px; font-size:.84rem; color:{muted}}}
       .cite .src{{background:{surface}; border:1px solid {card_bd}; border-radius:8px;
         padding:3px 9px; color:{navy}; font-weight:600; font-size:.8rem}}
-      /* (2) 통증·위기 표현 시 상담 안내 배너 */
+      /* (2) 통증·위기 표현 시 빨간 경고 배너 */
       .warn-banner{{display:flex; gap:13px; align-items:center; margin:10px 0 4px;
-        background:#fff5ef; border:1px solid #f3cdba; border-left:5px solid #e07a47;
-        border-radius:14px; padding:14px 16px; color:#7a3b1e; font-size:1.04rem;
-        line-height:1.5}}
-      .warn-banner.crisis{{background:#fdeef2; border-color:#eab3c5;
-        border-left-color:{accent}; color:#7a1733}}
-      .warn-banner b{{color:#be185d}}
-      .warn-banner.crisis b{{color:{accent}}}
-      .warn-banner .ic{{font-size:1.6rem; flex-shrink:0}}
+        background:#fdecec; border:1px solid #f3b4b4; border-left:5px solid #d93025;
+        border-radius:14px; padding:14px 16px; color:#8a1c13; font-size:1.05rem;
+        line-height:1.5; font-weight:500}}
+      .warn-banner.crisis{{background:#fde7ea; border-color:#f0a3b2;
+        border-left-color:#b00020; color:#7a0b1c}}
+      .warn-banner b{{color:#c0392b}}
+      .warn-banner.crisis b{{color:#b00020}}
+      .warn-banner .ic{{font-size:1.65rem; flex-shrink:0}}
       /* (3) 어르신용 빠른 질문 버튼 — 크고 둥글게 */
       .st-key-quickask div[data-testid="stButton"] > button{{
         border:1px solid {card_bd} !important; border-radius:14px !important;
@@ -564,8 +564,8 @@ def _chat_html(messages, limit: int = 8) -> str:
 
 
 # 통증·우울·고립 표현(주의) / 자살·자해 암시(위기)
-_CONCERN = ("아파", "아프", "도와줘", "도와주", "힘들", "외로", "우울", "슬프",
-            "괴로", "못살", "숨이", "어지럽", "쓰러", "기운이없")
+_CONCERN = ("아파", "아프", "불편", "도와줘", "도와주", "힘들", "외로", "우울",
+            "슬프", "괴로", "못살", "숨이", "어지럽", "쓰러", "기운이없")
 _CRISIS = ("죽고싶", "죽어", "자살", "살기싫", "사라지고싶", "끝내고싶")
 
 
@@ -588,10 +588,28 @@ def _concern_banner():
             '연락하실 수 있어요.</div></div>', unsafe_allow_html=True)
     elif any(k in t for k in _CONCERN):
         st.markdown(
-            '<div class="warn-banner"><span class="ic">💛</span>'
-            '<div>몸이나 마음이 힘드시군요. <b>복지상담 129</b> 또는 '
+            '<div class="warn-banner"><span class="ic">⚠️</span>'
+            '<div>몸이나 마음이 힘드신 것 같아요. <b>복지상담 129</b> 또는 '
             '<b>정신건강 상담 109</b>(24시간)에서 도움을 받으실 수 있어요. '
             '아래 버튼으로 관련 복지도 물어보세요.</div></div>', unsafe_allow_html=True)
+
+
+def _maybe_admin_alert(q: str):
+    """사용자 메시지에 통증·불편·위기 키워드가 있으면 관리자 대시보드로 알림을
+    올린다(이름·메시지 원문·시각). 메시지당 1회만 호출되도록 상담 시작 지점에서 부른다."""
+    t = q.replace(" ", "")
+    crisis = any(k in t for k in _CRISIS)
+    if not (crisis or any(k in t for k in _CONCERN)):
+        return
+    import time
+    hit = [k for k in (_CRISIS + _CONCERN) if k in t]
+    st.session_state.setdefault("admin_alerts", []).insert(0, {
+        "name": st.session_state.get("auth_user", "어르신"),
+        "message": q,                                   # 메시지 원문 그대로
+        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "level": "위기" if crisis else "주의",
+        "keyword": ", ".join(hit[:3]),
+    })
 
 
 # (3) 분야 → 자주 묻는 질문 목록. 분야 버튼을 누르면 질문 목록을 펼쳐 보여준다.
@@ -803,6 +821,7 @@ def _render_history(messages):
 def ask_and_stream(client, q: str):
     """(1) 답변을 st.write_stream 으로 토큰 단위 스트리밍 + (2) st.caption 출처."""
     _bubble("user", q)
+    _maybe_admin_alert(q)       # 키워드 감지 시 관리자 대시보드로 알림(메시지당 1회)
     r = _answer_for(client, q)
     if not r:
         return
@@ -1462,9 +1481,37 @@ def _go_home():
 def admin_view(client):
     st.markdown('<div class="gov-wrap sec">', unsafe_allow_html=True)
     st.button("← 어르신 화면으로 돌아가기", on_click=_go_home, type="primary")
-    st.markdown('<h2>관리자 · 이상신호 모니터</h2>'
+    st.markdown('<h2>관리자 대시보드 · 이상신호 모니터</h2>'
                 '<p class="sub">어르신 화면에는 보이지 않는 배경 모니터링입니다.</p>',
                 unsafe_allow_html=True)
+
+    # ── 키워드 감지 알림 (아파·불편해·도와줘 등) ──────────────────────────
+    alerts = st.session_state.get("admin_alerts", [])
+    n_crisis = sum(1 for a in alerts if a["level"] == "위기")
+    st.markdown("### 🚨 키워드 감지 알림")
+    a1, a2, a3 = st.columns(3)
+    a1.metric("총 알림", f"{len(alerts)}건")
+    a2.metric("위기", f"{n_crisis}건")
+    a3.metric("주의", f"{len(alerts) - n_crisis}건")
+    if st.button("알림 비우기", key="clear_admin_alerts"):
+        st.session_state["admin_alerts"] = []
+        st.rerun()
+    if alerts:
+        for a in alerts[:30]:
+            cls = "crisis" if a["level"] == "위기" else ""
+            ic = "🆘" if a["level"] == "위기" else "⚠️"
+            st.markdown(
+                f'<div class="warn-banner {cls}" style="align-items:flex-start">'
+                f'<span class="ic">{ic}</span><div>'
+                f'<b>[{a["level"]}] {a["name"]} 님</b> '
+                f'<span style="color:#8493ac;font-size:.9rem">· {a["time"]}'
+                f'{" · 키워드: " + a["keyword"] if a.get("keyword") else ""}</span><br>'
+                f'<span style="font-size:1.06rem">“{a["message"]}”</span>'
+                f'</div></div>', unsafe_allow_html=True)
+    else:
+        st.caption("감지된 키워드 알림이 없습니다.")
+    st.divider()
+
     s = st.session_state.get("state") or {}
     c1, c2, c3 = st.columns(3)
     status = ("긴급 확인" if s.get("crisis") else
@@ -1499,6 +1546,7 @@ def main():
     st.session_state.setdefault("font_scale", 1.0)
     st.session_state.setdefault("voice_mode", False)
     st.session_state.setdefault("tab", "home")   # 폰 앱 탭: home/mywelfare/talk/services
+    st.session_state.setdefault("admin_alerts", [])   # 키워드 감지 → 관리자 알림
 
     # 접속 흐름: 로그인 → 내 정보 입력 → (이후) 포털 화면.
     # 로그인·내 정보는 무거운 어시스턴트가 필요 없으므로 바로 뜬다.
@@ -1537,6 +1585,13 @@ def main():
             help=f"로컬 TTS: {get_tts().backend or '사용 불가'}")
         st.divider()
         view = st.radio("화면", ["대전노인복지HUB (어르신)", "관리자"], key="view")
+        _na = len(st.session_state.get("admin_alerts", []))
+        if _na:
+            st.markdown(f'<div style="background:#fdecec;border:1px solid #f3b4b4;'
+                        f'border-radius:10px;padding:8px 12px;color:#8a1c13;'
+                        f'font-weight:700;font-size:.9rem;margin:-4px 0 6px">'
+                        f'🚨 관리자 알림 {_na}건 — 관리자 화면에서 확인</div>',
+                        unsafe_allow_html=True)
         st.caption("상담 방식")
         if st.button("텍스트·검색", use_container_width=True):
             st.session_state["mode"] = "text"; st.rerun()
