@@ -334,6 +334,29 @@ def inject_css():
       div[data-testid="stButton"] > button:active{{transform:translateY(0) scale(.98)}}
       .chip:active{{transform:scale(.96)}}
 
+      /* (1) RAG 답변 아래 근거 출처 칩 */
+      .cite{{display:flex; gap:7px; flex-wrap:wrap; align-items:center;
+        margin:-4px 2px 2px; font-size:.84rem; color:{muted}}}
+      .cite .src{{background:{surface}; border:1px solid {card_bd}; border-radius:8px;
+        padding:3px 9px; color:{navy}; font-weight:600; font-size:.8rem}}
+      /* (2) 통증·위기 표현 시 상담 안내 배너 */
+      .warn-banner{{display:flex; gap:13px; align-items:center; margin:10px 0 4px;
+        background:#fff5ef; border:1px solid #f3cdba; border-left:5px solid #e07a47;
+        border-radius:14px; padding:14px 16px; color:#7a3b1e; font-size:1.04rem;
+        line-height:1.5}}
+      .warn-banner.crisis{{background:#fdeef2; border-color:#eab3c5;
+        border-left-color:{accent}; color:#7a1733}}
+      .warn-banner b{{color:#be185d}}
+      .warn-banner.crisis b{{color:{accent}}}
+      .warn-banner .ic{{font-size:1.6rem; flex-shrink:0}}
+      /* (3) 어르신용 빠른 질문 버튼 — 크고 둥글게 */
+      .st-key-quickask div[data-testid="stButton"] > button{{
+        border:1px solid {card_bd} !important; border-radius:14px !important;
+        background:{surface2} !important; color:{navy} !important; font-weight:700 !important;
+        font-size:1.05rem !important; padding:.7rem .5rem !important; min-height:52px !important}}
+      .st-key-quickask div[data-testid="stButton"] > button:hover{{
+        border-color:{accent} !important; background:#eef3ff !important; color:{accent} !important}}
+
       /* ---- app bottom tab bar — LinkedIn-style compact icon+label row --- */
       .st-key-htnav{{position:fixed; left:50%; transform:translateX(-50%); bottom:16px;
         width:min(440px,92vw); z-index:9999; background:rgba(255,255,255,.98);
@@ -467,12 +490,97 @@ def _speak(answer: str):
 def _store(r: dict):
     audio = _speak(r["answer"])
     st.session_state["chat"].append(("user", r["question"]))
-    st.session_state["chat"].append(("bot", r["answer"], audio))
+    # 봇 메시지 = (role, 답변, 오디오, 근거 출처) — 근거는 답변 아래 칩으로 표시
+    st.session_state["chat"].append(("bot", r["answer"], audio, r.get("sources") or []))
     st.session_state["latest_audio"] = audio
     if r.get("alert"):
         urgency = "긴급" if r.get("crisis") else "주의"
         st.session_state["alerts"].insert(0, (urgency, r["alert"]))
     st.session_state["state"] = r
+
+
+# -- (1) 근거 출처 · (2) 경고 배너 · 채팅 렌더 공용 ----------------------------
+def _cite_html(sources) -> str:
+    """RAG 답변 아래 '근거' 출처 칩(파일명에서 확장자·중복 제거)."""
+    if not sources:
+        return ""
+    import html as _html
+    import os
+    seen, names = set(), []
+    for s in sources:
+        n = os.path.splitext(os.path.basename(str(s)))[0].strip()
+        if n and n not in seen:
+            seen.add(n)
+            names.append(n)
+    if not names:
+        return ""
+    chips = "".join(f'<span class="src">{_html.escape(n)}</span>' for n in names[:3])
+    return f'<div class="row l"><div class="cite">📄 근거 {chips}</div></div>'
+
+
+def _chat_html(messages, limit: int = 8) -> str:
+    """채팅 내역 → 말풍선 HTML. 봇 답변 아래에 근거 출처 칩을 붙인다."""
+    import html as _html
+    rows = ""
+    for m in messages[-limit:]:
+        if m[0] == "user":
+            rows += (f'<div class="row r"><div class="bub user">'
+                     f'{_html.escape(m[1])}</div></div>')
+        else:
+            rows += (f'<div class="row l"><div class="bub bot">'
+                     f'{_html.escape(m[1])}</div></div>')
+            rows += _cite_html(m[3] if len(m) > 3 else [])   # (1) 근거 출처
+    return f'<div class="chat">{rows}</div>'
+
+
+# 통증·우울·고립 표현(주의) / 자살·자해 암시(위기)
+_CONCERN = ("아파", "아프", "도와줘", "도와주", "힘들", "외로", "우울", "슬프",
+            "괴로", "못살", "숨이", "어지럽", "쓰러", "기운이없")
+_CRISIS = ("죽고싶", "죽어", "자살", "살기싫", "사라지고싶", "끝내고싶")
+
+
+def _concern_banner():
+    """(2) 마지막 사용자 메시지에 통증·우울·위기 표현이 있으면 상담 안내 배너."""
+    last = ""
+    for m in reversed(st.session_state.get("chat", [])):
+        if m[0] == "user":
+            last = m[1]
+            break
+    if not last:
+        return
+    t = last.replace(" ", "")
+    crisis = any(k in t for k in _CRISIS)
+    if crisis:
+        st.markdown(
+            '<div class="warn-banner crisis"><span class="ic">🆘</span>'
+            '<div>많이 힘드신가요? 혼자 견디지 마세요. '
+            '<b>자살예방 상담전화 109</b> (24시간·무료·비밀보장)로 지금 바로 '
+            '연락하실 수 있어요.</div></div>', unsafe_allow_html=True)
+    elif any(k in t for k in _CONCERN):
+        st.markdown(
+            '<div class="warn-banner"><span class="ic">💛</span>'
+            '<div>몸이나 마음이 힘드시군요. <b>복지상담 129</b> 또는 '
+            '<b>정신건강 상담 109</b>(24시간)에서 도움을 받으실 수 있어요. '
+            '아래 버튼으로 관련 복지도 물어보세요.</div></div>', unsafe_allow_html=True)
+
+
+def quick_actions(client):
+    """(3) 어르신용 빠른 질문 버튼 — 누르면 바로 상담."""
+    st.markdown('<p class="sub" style="margin:4px 2px 8px">자주 찾는 질문 — 눌러서 바로 '
+                '물어보세요</p>', unsafe_allow_html=True)
+    quicks = [("💰 기초연금", "기초연금 신청 방법 알려줘"),
+              ("🧠 치매 검사", "치매 검사 무료로 받고 싶어요"),
+              ("🚇 경로우대", "지하철 무료로 탈 수 있나요?"),
+              ("🚨 응급안전", "혼자 사는데 응급상황이 걱정돼요"),
+              ("💬 마음 상담", "우울하고 외로울 때 상담받고 싶어요")]
+    with st.container(key="quickask"):
+        pairs = [quicks[i:i + 2] for i in range(0, len(quicks), 2)]
+        for rw in pairs:
+            cols = st.columns(len(rw))
+            for col, (label, q) in zip(cols, rw):
+                if col.button(label, key=f"qa_{q}", use_container_width=True):
+                    ask_text(client, q)
+                    st.rerun()
 
 
 _GREETINGS = {"안녕", "안녕하세요", "안녕하십니까", "하이", "헬로", "반가워요",
@@ -502,10 +610,12 @@ def ask_text(client, q: str):
                   "복지 관련 질문이면 이 분 상황에 맞춰 답하고, 인사·일상 대화면 "
                   "복지 내용을 나열하지 말고 짧게 인사로만 답하세요.)")
     # Demo toggle: RAG on (문서 근거) vs off (LLM만).
-    if st.session_state.get("use_rag", True):
-        r = client.ask(q_send)
-    else:
-        r = client.ask_norag(q_send)
+    # (4) 검색/생성 동안 '검색 중…' 스피너 표시.
+    with st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…"):
+        if st.session_state.get("use_rag", True):
+            r = client.ask(q_send)
+        else:
+            r = client.ask_norag(q_send)
     if "error" in r:
         st.error(r["error"]); return
     r["question"] = q   # 화면에는 원래 질문만 보이게
@@ -762,13 +872,7 @@ def voice_orb(client):
         # 음성 패키지가 없거나(서버) HTTPS가 아니면 음성은 못 쓴다. 하지만 문자
         # 대화는 보여야 하므로, 채팅 내역을 렌더하고 돌아간다(답변이 안 보이던 버그).
         st.caption("💬 글로 입력해 상담하세요. (음성은 패키지·HTTPS 환경에서 지원)")
-        import html as _html
-        rows = ""
-        for m in st.session_state.get("chat", [])[-8:]:
-            side, who = ("r", "user") if m[0] == "user" else ("l", "bot")
-            rows += (f'<div class="row {side}"><div class="bub {who}">'
-                     f'{_html.escape(m[1])}</div></div>')
-        st.markdown(f'<div class="chat">{rows}</div>', unsafe_allow_html=True)
+        st.markdown(_chat_html(st.session_state.get("chat", [])), unsafe_allow_html=True)
         return
 
     class VP:
@@ -804,13 +908,7 @@ def voice_orb(client):
         status.markdown(f'<div class="vstatus">{l}</div>', unsafe_allow_html=True)
 
     def render_chat():
-        import html as _html
-        rows = ""
-        for m in st.session_state["chat"][-8:]:
-            side, who = ("r", "user") if m[0] == "user" else ("l", "bot")
-            rows += (f'<div class="row {side}"><div class="bub {who}">'
-                     f'{_html.escape(m[1])}</div></div>')
-        chat_ph.markdown(f'<div class="chat">{rows}</div>', unsafe_allow_html=True)
+        chat_ph.markdown(_chat_html(st.session_state["chat"]), unsafe_allow_html=True)
 
     render_chat()
     if not ctx.state.playing:
@@ -847,7 +945,7 @@ def voice_orb(client):
         if "error" in r:
             drain(proc); orbset("listen", "듣고 있어요…"); continue
         st.session_state["chat"].append(("user", r["question"]))
-        st.session_state["chat"].append(("bot", r["answer"], None))
+        st.session_state["chat"].append(("bot", r["answer"], None, r.get("sources") or []))
         st.session_state["state"] = r
         if r.get("alert"):
             st.session_state["alerts"].insert(
@@ -912,8 +1010,11 @@ def chat_area(client):
     st.markdown('<p class="sub" style="margin-top:-4px">궁금하신 복지를 편하게 물어보세요. '
                 '대전 어르신 맞춤으로 답해 드립니다.</p>', unsafe_allow_html=True)
     st.session_state["use_rag"] = True   # 항상 RAG 사용(문서 근거)
-    orb_slot = st.container()          # voice orb sits here (top), filled last
-    # text input (renders before the blocking voice loop, so it always shows)
+    # 레이아웃: 빠른질문 → 경고배너 → 채팅 → 입력(아래). 슬롯을 먼저 잡고,
+    # 입력 폼을 정의한 뒤(블로킹 음성 루프 전에 항상 보이게) 슬롯을 채운다.
+    quick_slot = st.container()
+    banner_slot = st.container()
+    orb_slot = st.container()
     with st.form("ai_text", clear_on_submit=True):
         tc1, tc2 = st.columns([5, 1])
         q = tc1.text_input("입력", placeholder="궁금하신 내용을 글로 입력하셔도 됩니다",
@@ -921,8 +1022,12 @@ def chat_area(client):
         go = tc2.form_submit_button("보내기", use_container_width=True)
     if go and q.strip():
         ask_text(client, q.strip()); st.rerun()
+    with quick_slot:
+        quick_actions(client)      # (3) 어르신용 빠른 질문 버튼
+    with banner_slot:
+        _concern_banner()          # (2) 통증·위기 표현 시 상담 안내 배너
     with orb_slot:
-        voice_orb(client)
+        voice_orb(client)          # 채팅(근거 포함) + 음성
     st.markdown('</div>', unsafe_allow_html=True)
 
 
