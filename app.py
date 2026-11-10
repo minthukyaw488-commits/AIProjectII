@@ -602,13 +602,19 @@ def _maybe_admin_alert(q: str):
         return
     import time
     hit = [k for k in (_CRISIS + _CONCERN) if k in t]
+    name = st.session_state.get("auth_user", "어르신")
+    level = "위기" if crisis else "주의"
     st.session_state.setdefault("admin_alerts", []).insert(0, {
-        "name": st.session_state.get("auth_user", "어르신"),
-        "message": q,                                   # 메시지 원문 그대로
+        "name": name, "message": q,                     # 메시지 원문 그대로
         "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "level": "위기" if crisis else "주의",
-        "keyword": ", ".join(hit[:3]),
+        "level": level, "keyword": ", ".join(hit[:3]),
     })
+    # DB 에도 저장 → 별도 관리자 앱(app_admin.py)이 모든 어르신을 모니터
+    try:
+        from src import db
+        db.save_alert(name, q, level, "키워드: " + ", ".join(hit[:3]))
+    except Exception:
+        pass
 
 
 # (3) 분야 → 자주 묻는 질문 목록. 분야 버튼을 누르면 질문 목록을 펼쳐 보여준다.
@@ -710,6 +716,13 @@ def _answer_for(client, q: str):
     if r.get("alert"):
         st.session_state["alerts"].insert(
             0, ("긴급" if r.get("crisis") else "주의", r["alert"]))
+        # 대화 분석으로 감지된 이상신호도 관리자 DB 에 저장
+        try:
+            from src import db
+            db.save_alert(st.session_state.get("auth_user", "어르신"), q,
+                          "위기" if r.get("crisis") else "주의", "대화 분석 이상신호")
+        except Exception:
+            pass
     st.session_state["state"] = r
     return r
 

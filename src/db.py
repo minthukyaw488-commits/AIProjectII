@@ -263,6 +263,68 @@ def backend_name() -> str:
     return "mysql" if (_USE_MYSQL and _conn() is not None) else "file(json)"
 
 
+# ── 이상신호 알림(관리자 모니터용) ────────────────────────────────────
+_ALERTS_JSON = os.path.join(_DATA, "alerts.json")
+_ALERTS_DDL = (
+    "CREATE TABLE IF NOT EXISTS alerts ("
+    " id INT AUTO_INCREMENT PRIMARY KEY,"
+    " user_id INT NULL,"
+    " name VARCHAR(100),"
+    " message TEXT,"
+    " level VARCHAR(10),"           # 주의 / 위기
+    " reason VARCHAR(255),"
+    " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+    " INDEX idx_name_time (name, created_at)) ENGINE=InnoDB")
+
+
+def save_alert(name: str, message: str, level: str, reason: str = ""):
+    """어르신 대화에서 감지된 이상신호를 저장(관리자 모니터가 읽는다)."""
+    import time
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute(_ALERTS_DDL)
+                    uid = _user_id(cur, name) if name else None
+                    cur.execute(
+                        "INSERT INTO alerts (user_id, name, message, level, reason) "
+                        "VALUES (%s,%s,%s,%s,%s)", (uid, name, message, level, reason))
+                return
+            except Exception as e:                # noqa: BLE001
+                print(f"[db] save_alert 실패: {e}")
+            finally:
+                c.close()
+        store = _load_json(_ALERTS_JSON)
+        store.setdefault("alerts", []).append({
+            "name": name, "message": message, "level": level, "reason": reason,
+            "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+        _save_json(_ALERTS_JSON, store)
+
+
+def list_alerts(limit: int = 500) -> list[dict]:
+    """최근 이상신호 알림(최신 → 오래된). 각 항목: name·message·level·reason·time."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute(_ALERTS_DDL)
+                    cur.execute(
+                        "SELECT name, message, level, reason, created_at "
+                        "FROM alerts ORDER BY created_at DESC LIMIT %s", (limit,))
+                    rows = cur.fetchall()
+                    for r in rows:
+                        r["time"] = str(r.pop("created_at"))
+                    return rows
+            except Exception:                     # noqa: BLE001
+                return []
+            finally:
+                c.close()
+        rows = _load_json(_ALERTS_JSON).get("alerts", [])
+        return list(reversed(rows))[:limit]
+
+
 # ── 복지 카탈로그(복지 정보를 DB로 · Phase 4) ─────────────────────────
 _CATALOG_JSON = os.path.join(_DATA, "welfare_catalog.json")
 _CATALOG_COLS = ("name", "summary", "min_age", "need_income_low",
