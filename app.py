@@ -334,6 +334,9 @@ def inject_css():
       div[data-testid="stButton"] > button:active{{transform:translateY(0) scale(.98)}}
       .chip:active{{transform:scale(.96)}}
 
+      /* 스트리밍 답변 위 '복지 도우미' 라벨 */
+      .bub-label{{font-size:.78rem; font-weight:800; color:{accent};
+        margin:6px 2px 2px; letter-spacing:.01em}}
       /* (1) RAG 답변 아래 근거 출처 칩 */
       .cite{{display:flex; gap:7px; flex-wrap:wrap; align-items:center;
         margin:-4px 2px 2px; font-size:.84rem; color:{muted}}}
@@ -356,6 +359,20 @@ def inject_css():
         font-size:1.05rem !important; padding:.7rem .5rem !important; min-height:52px !important}}
       .st-key-quickask div[data-testid="stButton"] > button:hover{{
         border-color:{accent} !important; background:#eef3ff !important; color:{accent} !important}}
+      /* 선택된 분야(primary) 강조 */
+      .st-key-quickask div[data-testid="stButton"] > button[kind="primary"],
+      .st-key-quickask div[data-testid="stButton"] > button[data-testid*="primary"]{{
+        background:linear-gradient(135deg,{accent},{navy}) !important; color:#fff !important;
+        border-color:{navy} !important}}
+      /* 펼쳐진 자주 묻는 질문 목록 — 왼쪽 정렬, 가볍게 */
+      .st-key-quickfaq div[data-testid="stButton"] > button{{
+        border:1px solid {card_bd} !important; border-radius:12px !important;
+        background:{surface} !important; color:{ink} !important; font-weight:600 !important;
+        font-size:1.02rem !important; text-align:left !important; justify-content:flex-start !important;
+        padding:.65rem .9rem !important; min-height:48px !important; margin-bottom:2px}}
+      .st-key-quickfaq div[data-testid="stButton"] > button:hover{{
+        border-color:{accent} !important; background:#f2f6ff !important; color:{navy} !important}}
+      .st-key-quickfaq div[data-testid="stButton"] > button p{{text-align:left !important}}
 
       /* ---- app bottom tab bar — LinkedIn-style compact icon+label row --- */
       .st-key-htnav{{position:fixed; left:50%; transform:translateX(-50%); bottom:16px;
@@ -564,23 +581,140 @@ def _concern_banner():
             '아래 버튼으로 관련 복지도 물어보세요.</div></div>', unsafe_allow_html=True)
 
 
+# (3) 분야 → 자주 묻는 질문 목록. 분야 버튼을 누르면 질문 목록을 펼쳐 보여준다.
+_QUICK_FAQ = {
+    "💰 기초연금": ["기초연금은 어떻게 신청하나요?", "기초연금 대상 나이가 어떻게 되나요?",
+                "기초연금은 매달 얼마를 받나요?", "기초연금 신청에 필요한 서류가 있나요?"],
+    "🧠 치매 검사": ["치매 검사는 어디서 받나요?", "치매 조기검진은 무료인가요?",
+                 "치매안심센터는 어디에 있나요?", "치매 가족을 위한 지원이 있나요?"],
+    "🚇 경로우대": ["지하철 무료로 탈 수 있나요?", "경로우대 교통카드는 어디서 만들어요?",
+                "지하철 무임승차는 몇 살부터 되나요?", "공공시설 입장료 할인이 되나요?"],
+    "🚨 응급안전": ["혼자 사는데 응급상황이 걱정돼요", "응급버튼을 설치할 수 있나요?",
+                "화재감지기를 무료로 설치해 주나요?", "응급안전안심서비스 대상이 누구인가요?"],
+    "💬 마음 상담": ["우울하고 외로울 때 상담받고 싶어요", "자살예방 상담 전화번호가 있나요?",
+                 "상담 전화는 24시간 되나요?", "무료 심리상담을 받고 싶어요"],
+}
+
+
 def quick_actions(client):
-    """(3) 어르신용 빠른 질문 버튼 — 누르면 바로 상담."""
-    st.markdown('<p class="sub" style="margin:4px 2px 8px">자주 찾는 질문 — 눌러서 바로 '
-                '물어보세요</p>', unsafe_allow_html=True)
-    quicks = [("💰 기초연금", "기초연금 신청 방법 알려줘"),
-              ("🧠 치매 검사", "치매 검사 무료로 받고 싶어요"),
-              ("🚇 경로우대", "지하철 무료로 탈 수 있나요?"),
-              ("🚨 응급안전", "혼자 사는데 응급상황이 걱정돼요"),
-              ("💬 마음 상담", "우울하고 외로울 때 상담받고 싶어요")]
+    """(3) 분야 버튼 → 누르면 그 분야의 '자주 묻는 질문 목록'을 펼쳐 보여준다.
+    목록에서 질문을 누르면 그때 상담(스트리밍)을 시작한다."""
+    st.markdown('<p class="sub" style="margin:4px 2px 8px">자주 찾는 분야 — 누르면 '
+                '관련 질문을 보여드려요</p>', unsafe_allow_html=True)
+    cats = list(_QUICK_FAQ.keys())
+    sel = st.session_state.get("quick_cat")
     with st.container(key="quickask"):
-        pairs = [quicks[i:i + 2] for i in range(0, len(quicks), 2)]
+        pairs = [cats[i:i + 2] for i in range(0, len(cats), 2)]
         for rw in pairs:
             cols = st.columns(len(rw))
-            for col, (label, q) in zip(cols, rw):
-                if col.button(label, key=f"qa_{q}", use_container_width=True):
-                    ask_text(client, q)
+            for col, label in zip(cols, rw):
+                kind = "primary" if label == sel else "secondary"
+                if col.button(label, key=f"qc_{label}", use_container_width=True, type=kind):
+                    # 같은 분야를 다시 누르면 접기(토글)
+                    st.session_state["quick_cat"] = None if label == sel else label
                     st.rerun()
+    # 선택한 분야의 질문 목록을 펼친다
+    if sel and sel in _QUICK_FAQ:
+        st.markdown(f'<p class="sub" style="margin:8px 2px 4px">{sel} — 궁금한 질문을 '
+                    '누르세요</p>', unsafe_allow_html=True)
+        with st.container(key="quickfaq"):
+            for i, qq in enumerate(_QUICK_FAQ[sel]):
+                if st.button("❓ " + qq, key=f"qf_{sel}_{i}", use_container_width=True):
+                    st.session_state["pending_q"] = qq      # 이때 상담 시작(스트리밍)
+                    st.session_state["quick_cat"] = None
+                    st.rerun()
+
+
+# -- 스트리밍 응답 (st.write_stream) + 출처 캡션 (st.caption) --------------------
+def _stream_tokens(text: str):
+    """RAG 체인은 완결 답변을 반환하므로, 어절 단위로 잘라 토큰처럼 흘려보낸다
+    (타이핑 효과). st.write_stream() 에 넘긴다."""
+    import re
+    import time
+    for tok in re.findall(r"\S+\s*|\s+", text):
+        yield tok
+        time.sleep(0.015)
+
+
+def _source_caption(sources) -> str:
+    """검색된 청크의 출처로 '📚 Source: xxx.pdf' 캡션 문자열(중복 제거)."""
+    if not sources:
+        return ""
+    import os
+    seen = []
+    for s in sources:
+        b = os.path.basename(str(s)).strip()
+        if b and b not in seen:
+            seen.append(b)
+    return ("📚 Source: " + ", ".join(seen[:3])) if seen else ""
+
+
+def _answer_for(client, q: str):
+    """질문 → 결과 dict. 인사/프로필/오류/저장·알림 처리(채팅 append 는 호출부에서).
+    실패 시 None."""
+    if q.replace(" ", "").rstrip("!?.~ ") in _GREETINGS:
+        u = st.session_state.get("auth_user", "어르신")
+        r = {"question": q, "sources": [],
+             "answer": f"안녕하세요, {u} 님 😊 궁금하신 복지를 편하게 물어보세요."}
+    else:
+        p = st.session_state.get("profile", {})
+        q_send = q
+        if _profile_has_info(p):
+            q_send = (f"{q}\n\n(참고 — 상담 대상자: {_profile_summary(p)}. "
+                      "복지 관련 질문이면 이 분 상황에 맞춰 답하고, 인사·일상 대화면 "
+                      "복지 내용을 나열하지 말고 짧게 인사로만 답하세요.)")
+        with st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…"):
+            r = (client.ask(q_send) if st.session_state.get("use_rag", True)
+                 else client.ask_norag(q_send))
+        if "error" in r:
+            st.error(r["error"])
+            return None
+        r["question"] = q
+    try:
+        from src import db
+        u = st.session_state.get("auth_user")
+        if u:
+            db.save_chat(u, q, r.get("answer", ""), [])
+    except Exception:
+        pass
+    if r.get("alert"):
+        st.session_state["alerts"].insert(
+            0, ("긴급" if r.get("crisis") else "주의", r["alert"]))
+    st.session_state["state"] = r
+    return r
+
+
+def _bubble(role: str, text: str):
+    import html as _html
+    side, who = ("r", "user") if role == "user" else ("l", "bot")
+    st.markdown(f'<div class="chat" style="padding:2px 0"><div class="row {side}">'
+                f'<div class="bub {who}">{_html.escape(text)}</div></div></div>',
+                unsafe_allow_html=True)
+
+
+def _render_history(messages):
+    """지난 대화를 말풍선으로. (2) 봇 답변 아래마다 st.caption 으로 출처 표시."""
+    for m in messages:
+        _bubble(m[0], m[1])
+        if m[0] == "bot":
+            cap = _source_caption(m[3] if len(m) > 3 else [])
+            if cap:
+                st.caption(cap)
+
+
+def ask_and_stream(client, q: str):
+    """(1) 답변을 st.write_stream 으로 토큰 단위 스트리밍 + (2) st.caption 출처."""
+    _bubble("user", q)
+    r = _answer_for(client, q)
+    if not r:
+        return
+    st.markdown('<div class="bub-label">복지 도우미</div>', unsafe_allow_html=True)
+    st.write_stream(_stream_tokens(r["answer"]))          # (1) 토큰 스트리밍
+    cap = _source_caption(r.get("sources"))
+    if cap:
+        st.caption(cap)                                   # (2) 📚 Source: xxx.pdf
+    st.session_state["chat"].append(("user", q))
+    st.session_state["chat"].append(("bot", r["answer"], None, r.get("sources") or []))
 
 
 _GREETINGS = {"안녕", "안녕하세요", "안녕하십니까", "하이", "헬로", "반가워요",
@@ -851,7 +985,9 @@ def header_nav(client):
                                label_visibility="collapsed")
             go = sc2.form_submit_button("검색", use_container_width=True)
         if go and q.strip():
-            ask_text(client, q.strip()); st.rerun()
+            st.session_state["pending_q"] = q.strip()   # 상담 탭에서 스트리밍 답변
+            st.session_state["tab"] = "talk"
+            st.rerun()
     n.markdown('<div class="menu"><span>복지서비스</span><span>건강·의료</span>'
                '<span>어르신 돌봄</span><span>공지사항</span><span>상담·문의</span></div>',
                unsafe_allow_html=True)
@@ -1010,24 +1146,27 @@ def chat_area(client):
     st.markdown('<p class="sub" style="margin-top:-4px">궁금하신 복지를 편하게 물어보세요. '
                 '대전 어르신 맞춤으로 답해 드립니다.</p>', unsafe_allow_html=True)
     st.session_state["use_rag"] = True   # 항상 RAG 사용(문서 근거)
-    # 레이아웃: 빠른질문 → 경고배너 → 채팅 → 입력(아래). 슬롯을 먼저 잡고,
-    # 입력 폼을 정의한 뒤(블로킹 음성 루프 전에 항상 보이게) 슬롯을 채운다.
-    quick_slot = st.container()
-    banner_slot = st.container()
-    orb_slot = st.container()
+    # 레이아웃: 빠른질문 → 경고배너 → 지난대화 → (스트리밍 답변) → 입력(아래)
+    quick_actions(client)          # (3) 어르신용 빠른 질문 버튼
+    _concern_banner()              # 통증·위기 표현 시 상담 안내 배너
+    hist_slot = st.container()     # 지난 대화(말풍선 + 출처 캡션)
+    live_slot = st.container()     # 새 답변이 토큰 단위로 스트리밍되는 자리
     with st.form("ai_text", clear_on_submit=True):
         tc1, tc2 = st.columns([5, 1])
         q = tc1.text_input("입력", placeholder="궁금하신 내용을 글로 입력하셔도 됩니다",
                            label_visibility="collapsed")
         go = tc2.form_submit_button("보내기", use_container_width=True)
+
+    pending = st.session_state.pop("pending_q", None)
     if go and q.strip():
-        ask_text(client, q.strip()); st.rerun()
-    with quick_slot:
-        quick_actions(client)      # (3) 어르신용 빠른 질문 버튼
-    with banner_slot:
-        _concern_banner()          # (2) 통증·위기 표현 시 상담 안내 배너
-    with orb_slot:
-        voice_orb(client)          # 채팅(근거 포함) + 음성
+        pending = q.strip()
+
+    with hist_slot:
+        _render_history(st.session_state.get("chat", []))
+    if pending:
+        with live_slot:
+            ask_and_stream(client, pending)   # (1) 스트리밍 + (2) 출처 캡션
+        st.rerun()                            # 다음 런에서 지난 대화로 정착
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -1280,7 +1419,7 @@ def main():
         q = st.query_params["ask"]
         st.query_params.clear()
         if q.strip():
-            ask_text(client, q.strip())
+            st.session_state["pending_q"] = q.strip()   # 상담 탭에서 스트리밍으로 답변
             st.session_state["tab"] = "talk"   # 질문하면 상담 화면으로 전환
 
     with st.sidebar:
