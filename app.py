@@ -337,6 +337,15 @@ def inject_css():
       /* 마크다운 렌더(굵게/불릿) — 어르신 가독성 */
       .bub.bot strong{{color:{navy}; font-weight:800}}
       .bub.bot{{line-height:1.6}}
+      /* Generative-UI 액션 버튼(지도·후속질문) — 작고 가볍게 */
+      [class*="st-key-acts"]{{margin:-2px 2px 10px}}
+      [class*="st-key-acts"] div[data-testid="stButton"] > button{{
+        min-height:40px !important; padding:.4rem .7rem !important;
+        font-size:.95rem !important; border-radius:11px !important;
+        border:1px solid {card_bd} !important; background:{surface} !important;
+        color:{navy} !important; font-weight:600 !important}}
+      [class*="st-key-acts"] div[data-testid="stButton"] > button:hover{{
+        border-color:{accent} !important; background:#f2f6ff !important}}
       /* 스트리밍 답변 위 '복지 도우미' 라벨 */
       .bub-label{{font-size:.78rem; font-weight:800; color:{accent};
         margin:6px 2px 2px; letter-spacing:.01em}}
@@ -728,14 +737,67 @@ def _bubble(role: str, text: str):
                 unsafe_allow_html=True)
 
 
+# -- 간단 Generative-UI: 답변 내용에 따른 액션(지도·후속질문) 버튼 ---------------
+_CAT_KW = {"💰 기초연금": ("기초연금", "연금"), "🧠 치매 검사": ("치매",),
+           "🚇 경로우대": ("경로", "지하철", "교통", "무임"),
+           "🚨 응급안전": ("응급", "화재", "안전"),
+           "💬 마음 상담": ("우울", "외로", "상담", "마음", "자살", "힘들")}
+
+
+def _match_cat(q: str):
+    for cat, kws in _CAT_KW.items():
+        if any(k in q for k in kws):
+            return cat
+    return None
+
+
+def _gen_actions(user_q: str, answer: str):
+    """답변 내용에 따라 보여줄 액션: 기관 언급 시 '가까운 기관 찾기'(지도 링크) +
+    같은 분야의 다른 질문을 후속 질문으로 1개 추천."""
+    import urllib.parse as _up
+    acts = []
+    a = answer or ""
+    for term in ("치매안심센터", "행정복지센터", "주민센터", "보건소",
+                 "노인복지관", "복지관", "국민연금공단"):
+        if term in a:
+            dist = (st.session_state.get("profile") or {}).get("district") or ""
+            qs = _up.quote(f"대전 {dist} {term}".replace("  ", " ").strip())
+            acts.append(("📍 가까운 " + term, "link", f"https://map.kakao.com/?q={qs}"))
+            break
+    cat = _match_cat(user_q)
+    if cat:
+        for faq in _QUICK_FAQ[cat]:
+            if faq != user_q:
+                acts.append(("❓ " + faq, "ask", faq))
+                break
+    return acts[:3]
+
+
+def _answer_actions(idx: int, user_q: str, answer: str):
+    """봇 답변 아래 Generative-UI 액션(지도·후속질문)만 표시."""
+    acts = _gen_actions(user_q, answer)
+    if not acts:
+        return
+    with st.container(key=f"acts{idx}"):
+        cols = st.columns(len(acts))
+        for j, (label, kind, payload) in enumerate(acts):
+            if kind == "link":
+                cols[j].link_button(label, payload, use_container_width=True)
+            elif cols[j].button(label, key=f"act{idx}_{j}", use_container_width=True):
+                st.session_state["pending_q"] = payload
+                st.rerun()
+
+
 def _render_history(messages):
-    """지난 대화를 말풍선으로. 봇 답변 아래에 출처 캡션."""
-    for m in messages:
+    """지난 대화를 말풍선으로. 봇 답변 아래에 출처 캡션 + 액션(지도·후속질문)."""
+    for i, m in enumerate(messages):
         _bubble(m[0], m[1])
         if m[0] == "bot":
             cap = _source_caption(m[3] if len(m) > 3 else [])
             if cap:
                 st.caption(cap)
+            uq = messages[i - 1][1] if i > 0 and messages[i - 1][0] == "user" else ""
+            _answer_actions(i, uq, m[1])
 
 
 def ask_and_stream(client, q: str):
