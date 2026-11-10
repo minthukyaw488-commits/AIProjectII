@@ -337,6 +337,14 @@ def inject_css():
       /* 마크다운 렌더(굵게/불릿) — 어르신 가독성 */
       .bub.bot strong{{color:{navy}; font-weight:800}}
       .bub.bot{{line-height:1.6}}
+      /* 빠른 선택 칩(즉시 전송) — pill 모양 */
+      .st-key-qreply{{margin:0 2px 6px}}
+      .st-key-qreply div[data-testid="stButton"] > button{{
+        border:1px solid {card_bd} !important; border-radius:999px !important;
+        background:{surface} !important; color:{navy} !important; font-weight:700 !important;
+        font-size:.98rem !important; padding:.55rem .6rem !important; min-height:46px !important}}
+      .st-key-qreply div[data-testid="stButton"] > button:hover{{
+        border-color:{accent} !important; background:#eef3ff !important; color:{accent} !important}}
       /* Generative-UI 액션 버튼(지도·후속질문) — 작고 가볍게 */
       [class*="st-key-acts"]{{margin:-2px 2px 10px}}
       [class*="st-key-acts"] div[data-testid="stButton"] > button{{
@@ -1251,6 +1259,25 @@ def home_screen(client):
     notices_block()
 
 
+# 한 번 누르면 바로 전송되는 빠른 선택 칩(auto-send). payload 가 질문으로 즉시 전송.
+_QUICK_REPLIES = [
+    ("🏠 처음이에요", "복지 서비스가 처음인데 무엇부터 시작하면 좋을까요?"),
+    ("📋 서비스 목록", "어떤 복지 서비스가 있는지 알려주세요"),
+    ("💻 온라인 신청", "복지 서비스를 온라인으로 신청할 수 있나요?"),
+]
+
+
+def quick_replies(client):
+    """빠른 선택 칩 — 누르면 텍스트박스에 채우지 않고 '즉시 전송'(RAG 실행).
+    pending_q 로 넘겨 ask_and_stream 이 사용자 메시지 추가 + 답변 생성(중복 없음)."""
+    with st.container(key="qreply"):
+        cols = st.columns(len(_QUICK_REPLIES))
+        for col, (label, q) in zip(cols, _QUICK_REPLIES):
+            if col.button(label, key=f"qr_{label}", use_container_width=True):
+                st.session_state["pending_q"] = q      # 즉시 전송(스트리밍)
+                st.rerun()
+
+
 def chat_area(client):
     """AI상담 탭 — 전체 화면 채팅(문자 + 음성)."""
     st.markdown('<div class="gov-wrap sec" id="talk">', unsafe_allow_html=True)
@@ -1258,8 +1285,9 @@ def chat_area(client):
     st.markdown('<p class="sub" style="margin-top:-4px">궁금하신 복지를 편하게 물어보세요. '
                 '대전 어르신 맞춤으로 답해 드립니다.</p>', unsafe_allow_html=True)
     st.session_state["use_rag"] = True   # 항상 RAG 사용(문서 근거)
-    # 레이아웃: 빠른질문 → 경고배너 → 지난대화 → (스트리밍 답변) → 입력(아래)
-    quick_actions(client)          # (3) 어르신용 빠른 질문 버튼
+    # 레이아웃: 빠른선택 칩 → 분야별 빠른질문 → 경고배너 → 지난대화 → 스트리밍 → 입력
+    quick_replies(client)          # 한 번 누르면 즉시 전송되는 칩(처음·서비스목록·온라인신청)
+    quick_actions(client)          # (3) 어르신용 빠른 질문 버튼(분야→질문)
     _concern_banner()              # 통증·위기 표현 시 상담 안내 배너
     hist_slot = st.container()     # 지난 대화(말풍선 + 출처 캡션)
     live_slot = st.container()     # 새 답변이 토큰 단위로 스트리밍되는 자리
