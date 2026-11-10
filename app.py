@@ -698,18 +698,26 @@ def _source_caption(sources) -> str:
     return ("📚 Source: " + ", ".join(seen[:3])) if seen else ""
 
 
-def _answer_for(client, q: str):
+def _answer_for(client, q: str, attach: str | None = None):
     """질문 → 결과 dict. 인사/프로필/오류/저장·알림 처리(채팅 append 는 호출부에서).
-    실패 시 None."""
-    if q.replace(" ", "").rstrip("!?.~ ") in _GREETINGS:
+    attach: 업로드한 사진·문서에서 읽은 글자(있으면 답변 근거로 함께 전달). 실패 시 None."""
+    if not attach and q.replace(" ", "").rstrip("!?.~ ") in _GREETINGS:
         u = st.session_state.get("auth_user", "어르신")
         r = {"question": q, "sources": [],
              "answer": f"안녕하세요, {u} 님 😊 궁금하신 복지를 편하게 물어보세요."}
     else:
         p = st.session_state.get("profile", {})
-        q_send = q
+        # 첨부(사진·문서) 내용이 있으면 질문 앞에 붙여, 그 내용을 근거로 답하게 한다.
+        base = q
+        if attach:
+            base = (f"[어르신이 올린 사진·문서에서 읽은 내용]\n{attach}\n\n"
+                    f"[어르신 질문]\n{q}\n\n"
+                    "(위 '읽은 내용'을 근거로, 어르신이 이해하기 쉽게 짧게 설명해 주세요. "
+                    "고지서·안내문·신청서라면 무엇에 대한 것이고 어디서 어떻게 해야 하는지 "
+                    "알려 주세요.)")
+        q_send = base
         if _profile_has_info(p):
-            q_send = (f"{q}\n\n(참고 — 상담 대상자: {_profile_summary(p)}. "
+            q_send = (f"{base}\n\n(참고 — 상담 대상자: {_profile_summary(p)}. "
                       "복지 관련 질문이면 이 분 상황에 맞춰 답하고, 인사·일상 대화면 "
                       "복지 내용을 나열하지 말고 짧게 인사로만 답하세요.)")
         with st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…"):
@@ -819,10 +827,13 @@ def _render_history(messages):
             _answer_actions(i, uq, m[1])
 
 
-def ask_and_stream(client, q: str):
-    """(1) 답변을 st.write_stream 으로 토큰 단위 스트리밍 + (2) st.caption 출처."""
+def ask_and_stream(client, q: str, attach: str | None = None):
+    """(1) 답변을 st.write_stream 으로 토큰 단위 스트리밍 + (2) st.caption 출처.
+    attach: 업로드한 사진·문서에서 읽은 글자(있으면 근거로 전달)."""
     _bubble("user", q)
-    r = _answer_for(client, q)
+    if attach:
+        st.caption("📎 올려 주신 사진·문서를 읽어서 참고했어요.")
+    r = _answer_for(client, q, attach=attach)
     if not r:
         return
     _record_signal(q, r)        # 이상신호 기록(키워드+대화분석 합쳐 메시지당 1건)
@@ -1265,6 +1276,51 @@ _QUICK_REPLIES = [
 ]
 
 
+_UPLOAD_TYPES = ["png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif",
+                 "pdf", "txt", "md", "csv", "docx"]
+
+
+def _read_upload(up):
+    """업로드 파일 → (추출 텍스트, 오류메시지). OCR 결과는 파일별로 캐시해 재실행 시
+    다시 읽지 않는다. 글자를 못 찾으면 (None, 안내문)."""
+    try:
+        key = "ocr::" + str(getattr(up, "file_id", None) or up.name)
+        if key in st.session_state:
+            return st.session_state[key], None
+        from src.file_intake import extract_text_from_upload
+        with st.spinner("🔎 사진·문서에서 글자를 읽는 중입니다…"):
+            text, _kind = extract_text_from_upload(up.name, up.getvalue())
+        if not (text or "").strip():
+            return None, ("사진에서 글자를 찾지 못했어요. 더 밝고 또렷하게, "
+                          "글자가 크게 보이도록 다시 찍어 올려 주세요.")
+        st.session_state[key] = text
+        return text, None
+    except Exception as e:
+        return None, f"파일을 읽는 중 문제가 생겼어요. {e}"
+
+
+def chat_uploader():
+    """📎 사진·문서 업로더 — 올리면 글자를 읽어(OCR) 답변 근거로 쓴다.
+    반환: (attach_text 또는 None, '설명해 주세요' 버튼이 눌렸는지)."""
+    attach_text, ask_file = None, False
+    with st.expander("📎 사진·문서 올리기 — 고지서·안내문을 올리면 읽어서 설명해 드려요"):
+        up = st.file_uploader(
+            "사진을 찍어 올리거나 문서를 선택하세요 (사진·PDF·txt)",
+            type=_UPLOAD_TYPES, label_visibility="collapsed", key="chat_upload")
+        if up is not None:
+            attach_text, err = _read_upload(up)
+            if err:
+                st.warning(err)
+            elif attach_text:
+                st.success(f"✅ '{up.name}' 에서 글자를 읽었어요. "
+                           "질문을 입력하거나 아래 버튼을 눌러 주세요.")
+                with st.expander("읽은 내용 미리보기"):
+                    st.text(attach_text[:1500])
+                ask_file = st.button("🔎 이 사진·문서를 설명해 주세요",
+                                     use_container_width=True, type="primary")
+    return attach_text, ask_file
+
+
 def quick_replies(client):
     """빠른 선택 칩 — 누르면 텍스트박스에 채우지 않고 '즉시 전송'(RAG 실행).
     pending_q 로 넘겨 ask_and_stream 이 사용자 메시지 추가 + 답변 생성(중복 없음)."""
@@ -1290,6 +1346,7 @@ def chat_area(client):
     live_slot = st.container()     # 새 답변이 토큰 단위로 스트리밍되는 자리
     quick_replies(client)          # 즉시 전송 칩(처음·서비스목록·온라인신청) — 입력 바로 위
     quick_actions(client)          # 분야→질문 빠른 버튼 — 입력 바로 위
+    attach_text, ask_file = chat_uploader()   # 📎 사진·문서 업로드(OCR)
     with st.form("ai_text", clear_on_submit=True):
         tc1, tc2 = st.columns([5, 1])
         q = tc1.text_input("입력", placeholder="궁금하신 내용을 글로 입력하셔도 됩니다",
@@ -1297,14 +1354,18 @@ def chat_area(client):
         go = tc2.form_submit_button("보내기", use_container_width=True)
 
     pending = st.session_state.pop("pending_q", None)
+    pending_attach = None
     if go and q.strip():
-        pending = q.strip()
+        pending, pending_attach = q.strip(), attach_text      # 글 질문(+ 첨부 있으면 근거로)
+    elif ask_file and attach_text:
+        pending = "올려 주신 사진·문서의 내용을 쉽게 설명해 주세요."
+        pending_attach = attach_text                          # 버튼: 첨부만으로 설명 요청
 
     with hist_slot:
         _render_history(st.session_state.get("chat", []))
     if pending:
         with live_slot:
-            ask_and_stream(client, pending)   # (1) 스트리밍 + (2) 출처 캡션
+            ask_and_stream(client, pending, attach=pending_attach)   # 스트리밍 + 출처 + 첨부근거
         st.rerun()                            # 다음 런에서 지난 대화로 정착
     st.markdown('</div>', unsafe_allow_html=True)
 
