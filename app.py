@@ -929,6 +929,40 @@ def _profile_has_info(p: dict) -> bool:
                             "mobility_issue", "chronic_illness"))
 
 
+def _load_user_session(name: str):
+    """로그인 세션 복원 — 프로필·지난 대화 불러오기.
+    로그인 시, 그리고 새로고침(카드·칩 클릭=전체 페이지 reload) 후 URL(?u=)로
+    세션을 되살릴 때 공통으로 쓴다(Streamlit 세션은 reload 시 초기화되므로)."""
+    from src import db
+    st.session_state["auth_user"] = name
+    try:
+        prof = db.get_profile(name)
+        if prof:
+            st.session_state["profile"] = prof
+            st.session_state["profile_done"] = True
+    except Exception:
+        pass
+    try:
+        hist = db.list_chats(name, limit=10)
+        chat = []
+        for h in hist:
+            if h.get("question"):
+                chat.append(("user", h["question"]))
+                chat.append(("bot", h.get("answer", ""), None))
+        if chat:
+            st.session_state["chat"] = chat
+    except Exception:
+        pass
+
+
+def _ask_href(q: str) -> str:
+    """카드·칩 링크 주소: ?u=<성함>&ask=<질문>.
+    새로고침돼도 ?u= 로 로그인이 유지되도록 성함을 함께 싣는다."""
+    from urllib.parse import quote
+    u = st.session_state.get("auth_user", "")
+    return f"?u={quote(u)}&ask={quote(q)}"
+
+
 def login_screen():
     """1단계 — 로그인(성함 기반, 프로토타입). 성공하면 auth_user 설정."""
     inject_css()
@@ -946,26 +980,8 @@ def login_screen():
 
     def _enter(name: str):
         """로그인 성공 처리: 세션 설정 + 저장된 프로필·지난 대화 불러오기."""
-        st.session_state["auth_user"] = name
-        try:
-            prof = db.get_profile(name)
-            if prof:
-                st.session_state["profile"] = prof
-                st.session_state["profile_done"] = True
-        except Exception:
-            pass
-        # 지난 대화 기록을 불러와 이어서 보여준다(대화 기억).
-        try:
-            hist = db.list_chats(name, limit=10)
-            chat = []
-            for h in hist:
-                if h.get("question"):
-                    chat.append(("user", h["question"]))
-                    chat.append(("bot", h.get("answer", ""), None))
-            if chat:
-                st.session_state["chat"] = chat
-        except Exception:
-            pass
+        _load_user_session(name)
+        st.query_params["u"] = name   # 새로고침(카드 클릭) 후에도 로그인 유지
         st.rerun()
 
     tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
@@ -1068,7 +1084,7 @@ def my_welfare_cards():
         c = palette[i % len(palette)]
         ask_q = f"{r.welfare.name} 대상과 신청 방법을 알려줘"
         cards += (
-            f'<a class="cat-card" style="--c:{c}" href="?ask={quote(ask_q)}" target="_self">'
+            f'<a class="cat-card" style="--c:{c}" href="{_ask_href(ask_q)}" target="_self">'
             f'<span class="cat-ic">✅</span>'
             f'<span class="cat-name">{r.welfare.name}</span>'
             f'<span class="cat-desc">{r.welfare.summary}</span>'
@@ -1262,7 +1278,7 @@ def home_screen(client):
               "치매안심센터는 어디서 이용하나요?", "무릎이 아픈데 도움받을 곳이 있나요?",
               "경로당·노인복지관 알려줘", "방문 건강관리 신청하고 싶어요"]
     chips = "".join(
-        f'<a class="chip" href="?ask={quote(q)}" target="_self">{q}</a>' for q in quicks)
+        f'<a class="chip" href="{_ask_href(q)}" target="_self">{q}</a>' for q in quicks)
     st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     notices_block()
@@ -1375,7 +1391,7 @@ def category_cards(client):
     cards = ""
     for name, desc, color, icon, q in CATEGORIES:
         cards += (
-            f'<a class="cat-card" style="--c:{color}" href="?ask={quote(q)}" target="_self">'
+            f'<a class="cat-card" style="--c:{color}" href="{_ask_href(q)}" target="_self">'
             f'<span class="cat-ic">{ICONS[icon]}</span>'
             f'<span class="cat-name">{name}</span>'
             f'<span class="cat-desc">{desc}</span>'
@@ -1390,7 +1406,7 @@ def category_cards(client):
 def popular_block():
     from urllib.parse import quote
     chips = "".join(
-        f'<a class="chip" href="?ask={quote(p + " 알려줘")}" target="_self">{p}</a>'
+        f'<a class="chip" href="{_ask_href(p + " 알려줘")}" target="_self">{p}</a>'
         for p in POPULAR)
     st.markdown('<div class="sec"><div class="gov-wrap">'
                 '<h2>자주 찾는 서비스</h2><p class="sub">많이 이용하시는 서비스입니다. '
@@ -1631,6 +1647,13 @@ def main():
     st.session_state.setdefault("tab", "home")   # 폰 앱 탭: home/mywelfare/talk/services
     st.session_state.setdefault("admin_alerts", [])   # 키워드 감지 → 관리자 알림
 
+    # 새로고침(카드·칩 클릭 = 전체 페이지 reload) 후에도 로그인 유지:
+    # Streamlit 세션은 reload 시 초기화되므로, URL 의 ?u=<성함> 으로 세션을 복원한다.
+    if not st.session_state.get("auth_user"):
+        _u = st.query_params.get("u")
+        if _u:
+            _load_user_session(_u)
+
     # 접속 흐름: 로그인 → 내 정보 입력 → (이후) 포털 화면.
     # 로그인·내 정보는 무거운 어시스턴트가 필요 없으므로 바로 뜬다.
     if not st.session_state.get("auth_user"):
@@ -1643,10 +1666,13 @@ def main():
     # 포털부터 어시스턴트 필요 — 지연 로딩(화면은 먼저 뜨고, 첫 질문에서만 준비).
     client = _LazyClient()
 
-    # A category card links to ?ask=<question>; handle it, then clear the param.
+    # A category card links to ?u=<성함>&ask=<question>; handle ask, keep u(로그인).
     if "ask" in st.query_params:
         q = st.query_params["ask"]
-        st.query_params.clear()
+        try:
+            del st.query_params["ask"]      # ask 만 제거, ?u=(로그인)는 유지
+        except Exception:
+            pass
         if q.strip():
             st.session_state["pending_q"] = q.strip()   # 상담 탭에서 스트리밍으로 답변
             st.session_state["tab"] = "talk"   # 질문하면 상담 화면으로 전환
@@ -1695,6 +1721,7 @@ def main():
         if st.button("로그아웃", use_container_width=True):
             for k in ("auth_user", "profile", "profile_done"):
                 st.session_state.pop(k, None)
+            st.query_params.clear()        # ?u= 로그인 표시 제거
             st.rerun()
 
     inject_css()
