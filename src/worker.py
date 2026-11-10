@@ -77,8 +77,8 @@ class AssistantClient:
             self._proc.stdin.flush()
             return self._read()
 
-    def ask(self, text: str) -> dict:
-        return self._rpc({"cmd": "ask", "text": text})
+    def ask(self, text: str, profile: dict | None = None) -> dict:
+        return self._rpc({"cmd": "ask", "text": text, "profile": profile})
 
     def ask_norag(self, text: str) -> dict:
         """Answer with the LLM alone (no retrieval) — for the RAG on/off demo."""

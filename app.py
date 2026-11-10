@@ -708,20 +708,18 @@ def _answer_for(client, q: str, attach: str | None = None):
     else:
         p = st.session_state.get("profile", {})
         # 첨부(사진·문서) 내용이 있으면 질문 앞에 붙여, 그 내용을 근거로 답하게 한다.
-        base = q
+        q_send = q
         if attach:
-            base = (f"[어르신이 올린 사진·문서에서 읽은 내용]\n{attach}\n\n"
-                    f"[어르신 질문]\n{q}\n\n"
-                    "(위 '읽은 내용'을 근거로, 어르신이 이해하기 쉽게 짧게 설명해 주세요. "
-                    "고지서·안내문·신청서라면 무엇에 대한 것이고 어디서 어떻게 해야 하는지 "
-                    "알려 주세요.)")
-        q_send = base
-        if _profile_has_info(p):
-            q_send = (f"{base}\n\n(참고 — 상담 대상자: {_profile_summary(p)}. "
-                      "복지 관련 질문이면 이 분 상황에 맞춰 답하고, 인사·일상 대화면 "
-                      "복지 내용을 나열하지 말고 짧게 인사로만 답하세요.)")
+            q_send = (f"[어르신이 올린 사진·문서에서 읽은 내용]\n{attach}\n\n"
+                      f"[어르신 질문]\n{q}\n\n"
+                      "(위 '읽은 내용'을 근거로, 어르신이 이해하기 쉽게 짧게 설명해 주세요. "
+                      "고지서·안내문·신청서라면 무엇에 대한 것이고 어디서 어떻게 해야 하는지 "
+                      "알려 주세요.)")
+        # 맞춤형: 프로필은 질문에 붙이지 않고 RAG 체인의 '시스템 프롬프트'로 전달한다
+        # (나이·거주지·건강 반영 + 나이 자격 안내). 질문 원문은 깔끔하게 유지.
+        prof = p if _profile_has_info(p) else None
         with st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…"):
-            r = (client.ask(q_send) if st.session_state.get("use_rag", True)
+            r = (client.ask(q_send, profile=prof) if st.session_state.get("use_rag", True)
                  else client.ask_norag(q_send))
         if "error" in r:
             st.error(r["error"])

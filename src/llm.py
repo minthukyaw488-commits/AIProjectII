@@ -76,6 +76,76 @@ ANSWER_SYSTEM_PROMPT = (
 )
 
 
+# ── 맞춤형(개인화): 프로필을 시스템 프롬프트에 주입 ────────────────────────────
+# 나이 요건이 있는 대표 복지(질문에 이 말이 있고 어르신 나이가 미달이면 자격 안내).
+_AGE_MIN_SERVICES = [
+    ("기초연금", 65), ("노인맞춤돌봄", 65), ("노인 맞춤 돌봄", 65),
+    ("노인일자리", 65), ("노인 일자리", 65), ("노인장기요양", 65),
+    ("장기요양", 65), ("경로우대", 65), ("경로 우대", 65),
+]
+
+
+def _profile_sentence(profile: dict) -> str:
+    """프로필 dict → 사람이 읽는 한 줄 요약(시스템 프롬프트용)."""
+    parts = []
+    age = profile.get("age")
+    if age is not None:
+        parts.append(f"{age}세")
+    if profile.get("district"):
+        parts.append(f"대전 {profile['district']} 거주")
+    if profile.get("living_alone") is True:
+        parts.append("독거(혼자 거주)")
+    health = []
+    if profile.get("mobility_issue") is True:
+        health.append("거동 불편")
+    if profile.get("chronic_illness") is True:
+        health.append("만성질환")
+    if health:
+        parts.append("건강: " + "·".join(health))
+    if profile.get("income_low") is True:
+        parts.append("저소득")
+    return ", ".join(parts)
+
+
+def _eligibility_note(profile: dict, question: str) -> str:
+    """질문한 서비스의 나이 요건을 어르신이 못 채우면, 정중히 설명하고 대안을
+    안내하도록 지시하는 문장을 돌려준다(없으면 빈 문자열)."""
+    try:
+        age = int(profile.get("age"))
+    except (TypeError, ValueError):
+        return ""
+    q = question or ""
+    for svc, minage in _AGE_MIN_SERVICES:
+        if svc in q and age < minage:
+            return (f"\n[자격 주의] 이 어르신은 {age}세로 '{svc}'의 나이 요건"
+                    f"(만 {minage}세 이상)에 못 미칩니다. 신청이 어려운 이유를 "
+                    "정중히 한두 문장으로 설명하고, 지금 나이에 받을 수 있는 복지"
+                    "(예: 저소득·건강·돌봄 관련)를 1~2가지 대안으로 안내하세요.")
+    return ""
+
+
+def build_personal_system(profile, question: str = "",
+                          base: str = ANSWER_SYSTEM_PROMPT) -> str:
+    """어르신 프로필을 시스템 프롬프트에 주입해 '맞춤형' 답변을 유도한다.
+    프로필이 없으면 기본 프롬프트를 그대로 돌려준다."""
+    if not profile:
+        return base
+    summary = _profile_sentence(profile)
+    if not summary:
+        return base
+    block = (
+        "\n\n[상담 대상 어르신 정보]\n"
+        f"- {summary}\n"
+        "위 어르신에게 답할 때:\n"
+        "- 나이·거주지(구)·건강 상태에 맞춰, 참고 자료를 근거로 구체적으로 안내합니다.\n"
+        "- 거동이 불편하면 방문·전화 신청 방법을 우선 알려 줍니다.\n"
+        "- 거주 '구'가 있으면 그 구의 주민센터·기관 이용을 안내합니다.\n"
+        "- 나이 요건이 맞지 않는 서비스를 물으면, 안 되는 이유를 정중히 설명하고 "
+        "받을 수 있는 다른 복지를 안내합니다."
+    )
+    return base + block + _eligibility_note(profile, question)
+
+
 # Warm, chatbot-like replies for greetings / small talk (no RAG, no refusal).
 SMALLTALK_SYSTEM_PROMPT = (
     "당신은 대전광역시 독거노인을 돕는 따뜻하고 친근한 복지 도우미입니다. "

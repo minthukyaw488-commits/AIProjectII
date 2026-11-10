@@ -27,7 +27,7 @@ from . import config
 from .abnormal_signal import AbnormalSignalDetector, SignalResult
 from .alerts import AlertDispatcher
 from .llm import (ANSWER_SYSTEM_PROMPT, OFF_DOMAIN_REPLY, SMALLTALK_SYSTEM_PROMPT,
-                  build_answer_prompt, make_llm)
+                  build_answer_prompt, build_personal_system, make_llm)
 from .rag_pipeline import RagPipeline
 from .router import is_smalltalk, is_off_domain
 
@@ -56,6 +56,13 @@ class WelfareAssistant:
         self._stt = None                          # Whisper, loaded on first use
         self.use_agent = config.USE_AGENT         # answer via tool-calling agent
         self._agent = None                        # lazily built (avoids import cycle)
+        self._turn_system = None                  # 이번 턴의 맞춤형 시스템 프롬프트
+
+    @property
+    def answer_system(self) -> str:
+        """최종 답변용 시스템 프롬프트. 이번 턴에 프로필이 주입됐으면 그것을,
+        아니면 기본 프롬프트를 쓴다(에이전트·결정론 경로가 공통으로 참조)."""
+        return self._turn_system or ANSWER_SYSTEM_PROMPT
 
     @property
     def agent(self):
@@ -65,7 +72,16 @@ class WelfareAssistant:
         return self._agent
 
     # -- main entry points -------------------------------------------------
-    def ask_text(self, question: str) -> TurnResult:
+    def ask_text(self, question: str, profile=None) -> TurnResult:
+        # 맞춤형: 이번 턴에 어르신 프로필을 시스템 프롬프트에 주입한다
+        # (나이·거주지·건강 반영 + 나이 자격 안내). try/finally 로 턴이 끝나면 해제.
+        self._turn_system = build_personal_system(profile, question) if profile else None
+        try:
+            return self._ask_text(question, profile)
+        finally:
+            self._turn_system = None
+
+    def _ask_text(self, question: str, profile=None) -> TurnResult:
         # Layer 2 (abnormal signal) runs on every utterance, incl. small talk.
         signal = self.detector.add_utterance(question)
 
@@ -104,7 +120,7 @@ class WelfareAssistant:
         contexts = [r.text for r in retrieved]
         prompt = build_answer_prompt(question, contexts)
         # 답변이 중간에 끊기지 않도록 생성 토큰 여유를 둔다(기본 130 → 256).
-        answer = self.llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT,
+        answer = self.llm.generate(prompt, system=self.answer_system,
                                    num_predict=256)
         return answer, [r.source for r in retrieved]
 

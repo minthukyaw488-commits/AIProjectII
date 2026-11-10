@@ -224,7 +224,7 @@ class WelfareAgent:
         on the gathered evidence (keeps answer quality independent of the agent
         model, which may be weaker/less Korean-native)."""
         prompt = build_answer_prompt(question, contexts)
-        return self.bot.llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT,
+        return self.bot.llm.generate(prompt, system=self.bot.answer_system,
                                      num_predict=num_predict)
 
     # -- Phase 2: multi-intent planner ------------------------------------
@@ -343,7 +343,7 @@ class WelfareAgent:
             return OFF_DOMAIN_REPLY, []
         contexts = [h.text for h in hits]
         prompt = build_answer_prompt(question, contexts)
-        answer = self.bot.llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT)
+        answer = self.bot.llm.generate(prompt, system=self.bot.answer_system)
         return answer, [h.source for h in hits]
 
 
