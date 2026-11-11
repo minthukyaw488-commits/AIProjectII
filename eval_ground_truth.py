@@ -243,6 +243,42 @@ def main():
     out.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n  → 상세 결과 저장: {out}")
 
+    # 재현 가능한 리포트(저장소에 커밋): README 수치의 출처가 된다.
+    report = _render_report(rr, ss, results["backend"], config.USE_LLM_SIGNAL)
+    rep = EVAL_DIR / "eval_report.md"
+    rep.write_text(report, encoding="utf-8")
+    print(f"  → 리포트 저장(커밋용): {rep}")
+
+
+def _render_report(rr, ss, backend, use_llm_signal) -> str:
+    """사람이 읽는 평가 리포트(마크다운). README 가 인용하는 '진짜 수치'의 출처."""
+    from datetime import datetime, timezone
+    b = ss["binary"]
+    agent = os.environ.get("USE_AGENT", "0") not in ("0", "false", "False", "")
+    lines = []
+    lines.append("# 평가 리포트 (자동 생성)\n")
+    lines.append(f"- 생성 시각(UTC): {datetime.now(timezone.utc):%Y-%m-%d %H:%M}")
+    lines.append(f"- 백엔드: `{backend}`")
+    lines.append(f"- 답변 경로: {'에이전트(USE_AGENT=1)' if agent else '결정형 검색(USE_AGENT=0)'}  "
+                 f"· 신호 LLM 심판: {'ON' if use_llm_signal else 'OFF(규칙 기반)'}")
+    lines.append(f"- 재현 명령: `RAG_REINDEX=1 python eval_ground_truth.py`\n")
+    lines.append("> 주의: Hit@K·거절률은 검색 전용 지표라 답변 경로(USE_AGENT)와 무관합니다.\n")
+    lines.append("## 1) RAG 검색 (정답 근거가 상위 3개 안에)\n")
+    lines.append(f"- **Hit@1 = {rr['hit1']}/{rr['n_in']} = {rr['hit1_rate']:.0%}**")
+    lines.append(f"- **Hit@3 = {rr['hit3']}/{rr['n_in']} = {rr['hit3_rate']:.0%}**")
+    lines.append(f"- **범위 밖 안전 거절 = {rr['refused']}/{rr['n_out']} = {rr['refuse_rate']:.0%}** "
+                 f"(관련성 게이트 {rr['gate']})\n")
+    lines.append("| 주제 | Hit@3 | 비율 |")
+    lines.append("|---|---|---|")
+    for topic, v in rr["per_topic"].items():
+        lines.append(f"| {topic} | {v['hit3']}/{v['n']} | {v['hit3_rate']:.0%} |")
+    lines.append("\n## 2) 이상신호 감지 (정상/주의/위험)\n")
+    lines.append(f"- 3단계 정확도 = **{ss['accuracy3']:.0%}**")
+    lines.append(f"- 이진(이상 여부) F1 = **{b['f1']:.2f}** (P {b['precision']:.0%} / R {b['recall']:.0%})")
+    lines.append(f"- ★ '위험' Recall = **{ss['danger_recall']:.0%}** (위기 신호를 놓치지 않는 비율)\n")
+    lines.append("---\n*이 파일은 `eval_ground_truth.py` 가 자동 생성합니다. 손으로 고치지 마세요.*")
+    return "\n".join(lines)
+
 
 if __name__ == "__main__":
     main()

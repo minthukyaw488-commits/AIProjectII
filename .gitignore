@@ -23,7 +23,9 @@ eval/eval_dataset.jsonl
 
 .DS_Store
 **/.DS_Store
-data/eval/results.json
+# 평가 결과는 저장소에 커밋한다(README 수치의 재현 가능한 출처).
+# data/eval/results.json  ← 더 이상 무시하지 않음(커밋 가능)
+# data/eval/eval_report.md ← eval_ground_truth.py 가 생성, 커밋 대상
 
 # 사용자 피드백 로그(로컬)
 data/feedback.jsonl
