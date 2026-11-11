@@ -225,7 +225,7 @@ class WelfareAgent:
         model, which may be weaker/less Korean-native)."""
         from .answer_guard import drop_unverified_phones
         prompt = build_answer_prompt(question, contexts)
-        answer = self.bot.llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT,
+        answer = self.bot.llm.generate(prompt, system=self.bot.answer_system,
                                        num_predict=num_predict)
         return drop_unverified_phones(answer, contexts)
 
@@ -345,7 +345,7 @@ class WelfareAgent:
             return OFF_DOMAIN_REPLY, []
         contexts = [h.text for h in hits]
         prompt = build_answer_prompt(question, contexts)
-        answer = self.bot.llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT)
+        answer = self.bot.llm.generate(prompt, system=self.bot.answer_system)
         return answer, [h.source for h in hits]
 
 

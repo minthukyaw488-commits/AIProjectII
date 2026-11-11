@@ -97,7 +97,8 @@ def main() -> None:
             break
         try:
             if cmd == "ask":
-                send(_turn_dict(bot.ask_text(req["text"]), bot))
+                send(_turn_dict(
+                    bot.ask_text(req["text"], profile=req.get("profile")), bot))
             elif cmd == "ask_norag":
                 q = req["text"]
                 sig = bot.detector.add_utterance(q)

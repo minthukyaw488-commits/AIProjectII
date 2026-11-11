@@ -726,20 +726,18 @@ def _answer_for(client, q: str, attach: str | None = None):
     else:
         p = st.session_state.get("profile", {})
         # 첨부(사진·문서) 내용이 있으면 질문 앞에 붙여, 그 내용을 근거로 답하게 한다.
-        base = q
+        q_send = q
         if attach:
-            base = (f"[어르신이 올린 사진·문서에서 읽은 내용]\n{attach}\n\n"
-                    f"[어르신 질문]\n{q}\n\n"
-                    "(위 '읽은 내용'을 근거로, 어르신이 이해하기 쉽게 짧게 설명해 주세요. "
-                    "고지서·안내문·신청서라면 무엇에 대한 것이고 어디서 어떻게 해야 하는지 "
-                    "알려 주세요.)")
-        q_send = base
-        if _profile_has_info(p):
-            q_send = (f"{base}\n\n(참고 — 상담 대상자: {_profile_summary(p)}. "
-                      "복지 관련 질문이면 이 분 상황에 맞춰 답하고, 인사·일상 대화면 "
-                      "복지 내용을 나열하지 말고 짧게 인사로만 답하세요.)")
+            q_send = (f"[어르신이 올린 사진·문서에서 읽은 내용]\n{attach}\n\n"
+                      f"[어르신 질문]\n{q}\n\n"
+                      "(위 '읽은 내용'을 근거로, 어르신이 이해하기 쉽게 짧게 설명해 주세요. "
+                      "고지서·안내문·신청서라면 무엇에 대한 것이고 어디서 어떻게 해야 하는지 "
+                      "알려 주세요.)")
+        # 맞춤형: 프로필은 질문에 붙이지 않고 RAG 체인의 '시스템 프롬프트'로 전달한다
+        # (나이·거주지·건강 반영 + 나이 자격 안내). 질문 원문은 깔끔하게 유지.
+        prof = p if _profile_has_info(p) else None
         with st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…"):
-            r = (client.ask(q_send) if st.session_state.get("use_rag", True)
+            r = (client.ask(q_send, profile=prof) if st.session_state.get("use_rag", True)
                  else client.ask_norag(q_send))
         if "error" in r:
             st.error(r["error"])
@@ -765,6 +763,7 @@ def _md_to_html(text: str) -> str:
     import html as _html
     import re
     t = _html.escape(text or "")
+    t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t)              # [글자](링크) → 글자만
     t = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", t)     # **굵게**
     t = re.sub(r"(?m)^\s*[-*•]\s+", "• ", t)                    # 불릿 → •
     t = t.replace("\n\n", "<br><br>").replace("\n", "<br>")     # 줄바꿈=여백
@@ -973,6 +972,14 @@ def _load_user_session(name: str):
         pass
 
 
+def _logout():
+    """로그아웃 → 로그인 화면으로. 세션·URL(?s= 토큰) 모두 비워 새 계정으로 로그인 가능."""
+    for k in ("auth_user", "auth_token", "profile", "profile_done", "chat", "pending_q"):
+        st.session_state.pop(k, None)
+    st.query_params.clear()
+    st.rerun()
+
+
 def _ask_href(q: str) -> str:
     """카드·칩 링크 주소: ?s=<서명토큰>&ask=<질문>.
     새로고침돼도 로그인이 유지되도록 서버가 서명한 토큰을 싣는다
@@ -1155,9 +1162,17 @@ def header_nav(client):
             st.session_state["pending_q"] = q.strip()   # 상담 탭에서 스트리밍 답변
             st.session_state["tab"] = "talk"
             st.rerun()
-    n.markdown('<div class="menu"><span>복지서비스</span><span>건강·의료</span>'
-               '<span>어르신 돌봄</span><span>공지사항</span><span>상담·문의</span></div>',
-               unsafe_allow_html=True)
+    with n:
+        st.markdown('<div class="menu"><span>복지서비스</span><span>건강·의료</span>'
+                    '<span>어르신 돌봄</span><span>공지사항</span><span>상담·문의</span></div>',
+                    unsafe_allow_html=True)
+        uu = st.session_state.get("auth_user", "")
+        hc1, hc2 = st.columns([1.4, 1], vertical_alignment="center")
+        hc1.markdown(f'<div style="text-align:right;color:#5c6b86;font-size:.9rem;'
+                     f'font-weight:700">👤 {uu} 님</div>', unsafe_allow_html=True)
+        if hc2.button("로그아웃", key="hdr_logout", use_container_width=True,
+                      help="로그인 화면으로 돌아가 다른 계정으로 로그인합니다."):
+            _logout()
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -1759,10 +1774,7 @@ def main():
         if st.button("내 정보 수정", use_container_width=True):
             st.session_state["profile_done"] = False; st.rerun()
         if st.button("로그아웃", use_container_width=True):
-            for k in ("auth_user", "auth_token", "profile", "profile_done"):
-                st.session_state.pop(k, None)
-            st.query_params.clear()        # ?s= 로그인 토큰 제거
-            st.rerun()
+            _logout()
 
     inject_css()
     inject_pwa()
