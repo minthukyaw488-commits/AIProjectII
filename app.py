@@ -42,11 +42,16 @@ ICONS = {
     "case": f'{_S}<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M3 12h18"/></svg>',
 }
 POPULAR = ["기초연금", "치매 검진", "노인일자리", "에너지 바우처", "경로우대", "방문간호"]
+# (날짜, 제목, 누르면 AI 상담에 보낼 질문) — 시연용 예시 공지
 NOTICES = [
-    ("2026-08-20", "2026년 기초연금 선정기준액 인상 안내"),
-    ("2026-08-14", "겨울철 에너지바우처 신청 접수 시작"),
-    ("2026-08-05", "치매안심센터 무료 조기검진 프로그램 운영"),
-    ("2026-07-28", "노인맞춤돌봄서비스 신규 대상자 모집"),
+    ("2026-08-20", "2026년 기초연금 선정기준액 인상 안내",
+     "기초연금 선정기준액이 얼마인가요? 저도 받을 수 있나요?"),
+    ("2026-08-14", "겨울철 에너지바우처 신청 접수 시작",
+     "에너지바우처는 누가 받을 수 있고 어떻게 신청하나요?"),
+    ("2026-08-05", "치매안심센터 무료 조기검진 프로그램 운영",
+     "치매 조기검진은 무료인가요? 어디서 받나요?"),
+    ("2026-07-28", "노인맞춤돌봄서비스 신규 대상자 모집",
+     "노인맞춤돌봄서비스 대상과 신청 방법을 알려주세요"),
 ]
 
 
@@ -269,6 +274,9 @@ def inject_css():
         border-bottom:1px solid {line}; font-size:1.05rem; border-radius:12px;
         transition:background .15s}}
       .notice:hover{{background:{surface2}}}
+      a.notice{{text-decoration:none !important; cursor:pointer; color:inherit}}
+      a.notice .go{{margin-left:auto; color:#2f6bff; font-size:.9rem; font-weight:700;
+        white-space:nowrap}}
       .notice .date{{color:#8493ac; font-variant-numeric:tabular-nums; min-width:104px;
         font-size:.95rem}}
       .notice .t{{font-weight:600; color:{ink}}}
@@ -1485,10 +1493,13 @@ def popular_block():
 
 def notices_block():
     rows = ""
-    for i, (date, title) in enumerate(NOTICES):
+    for i, (date, title, ask_q) in enumerate(NOTICES):
         new = '<span class="newtag">NEW</span>' if i == 0 else ""
-        rows += (f'<div class="notice"><span class="date">{date}</span>'
-                 f'<span class="t">{title}{new}</span></div>')
+        # 공지를 누르면 관련 질문으로 AI 상담 탭에서 바로 안내(로그인 유지)
+        rows += (f'<a class="notice" href="{_ask_href(ask_q)}" target="_self">'
+                 f'<span class="date">{date}</span>'
+                 f'<span class="t">{title}{new}</span>'
+                 f'<span class="go">자세히 ›</span></a>')
     st.markdown('<div class="sec" id="notices"><div class="gov-wrap">'
                 '<h2>공지사항</h2><p class="sub">시연용 예시 공지입니다. 실제 일정은 '
                 '주민센터·대전시 누리집에서 확인하세요.</p>'
