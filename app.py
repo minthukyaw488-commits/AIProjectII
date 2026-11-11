@@ -736,13 +736,25 @@ def _answer_for(client, q: str, attach: str | None = None):
         # 맞춤형: 프로필은 질문에 붙이지 않고 RAG 체인의 '시스템 프롬프트'로 전달한다
         # (나이·거주지·건강 반영 + 나이 자격 안내). 질문 원문은 깔끔하게 유지.
         prof = p if _profile_has_info(p) else None
-        with st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…"):
-            r = (client.ask(q_send, profile=prof) if st.session_state.get("use_rag", True)
-                 else client.ask_norag(q_send))
+        try:
+            with st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…"):
+                r = (client.ask(q_send, profile=prof) if st.session_state.get("use_rag", True)
+                     else client.ask_norag(q_send))
+        except Exception as e:                        # 상담 엔진(워커) 시작 실패 등
+            print(f"[app] 상담 엔진 오류: {e}")
+            # 대화창에 남도록 답변 형태로 돌려준다(st.warning 은 rerun 후 사라짐).
+            return {"question": q, "sources": [], "engine_error": True,
+                    "answer": "⚠️ AI 상담 엔진이 아직 준비되지 않아 답변을 드리지 못했어요.\n"
+                              "- 버튼·화면은 정상입니다.\n"
+                              "- 답변을 받으려면 AI 패키지 설치(requirements.txt)와 "
+                              "API 키(OPENAI_API_KEY) 설정이 필요합니다.\n"
+                              "- 자세한 오류는 터미널의 [worker] 줄을 확인하세요."}
         if "error" in r:
             st.error(r["error"])
             return None
         r["question"] = q
+    if r.get("engine_error"):
+        return r                                      # 엔진 오류는 기록·신호 분석 생략
     try:
         from src import db
         u = st.session_state.get("auth_user")
