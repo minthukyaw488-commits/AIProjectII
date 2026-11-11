@@ -124,7 +124,8 @@ def inject_css():
       /* top utility bar */
       .util{{background:{navy2}; color:#c7d4ee; font-size:.82rem}}
       .util .gov-wrap{{display:flex; justify-content:flex-end; gap:22px; padding:9px 24px}}
-      .util span{{opacity:.85; cursor:pointer}} .util span:hover{{opacity:1;color:#fff}}
+      .util a{{opacity:.85; cursor:pointer; color:#c7d4ee !important; text-decoration:none !important}}
+      .util a:hover{{opacity:1; color:#fff !important}}
 
       /* header + nav */
       .gnav{{background:rgba(255,255,255,.9); backdrop-filter:saturate(1.4) blur(8px);
@@ -137,9 +138,10 @@ def inject_css():
         display:flex;align-items:center;justify-content:center;font-size:1.25rem;
         box-shadow:0 6px 16px -4px {accent}66}}
       .menu{{display:flex; gap:8px; font-weight:600; font-size:1.02rem}}
-      .menu span{{padding:9px 15px; border-radius:11px; color:{muted}; cursor:pointer;
-        transition:all .15s}}
-      .menu span:hover{{background:{surface2}; color:{navy}}}
+      .menu a{{padding:9px 12px; border-radius:11px; color:{muted} !important; cursor:pointer;
+        transition:all .15s; text-decoration:none !important; white-space:nowrap}}
+      .menu{{flex-wrap:wrap}}
+      .menu a:hover{{background:{surface2}; color:{navy} !important}}
 
       /* hero - full-bleed short banner with illustration background */
       .hero .gov-wrap{{padding:0; max-width:100%}}
@@ -992,6 +994,16 @@ def _logout():
     st.rerun()
 
 
+_TABS = ("home", "mywelfare", "talk", "services")
+
+
+def _nav_href(tab: str) -> str:
+    """상단 메뉴 링크 주소: ?s=<서명토큰>&tab=<탭>. 로그인 유지 + 해당 탭으로 이동."""
+    from urllib.parse import quote
+    tok = st.session_state.get("auth_token", "")
+    return f"?s={quote(tok)}&tab={quote(tab)}"
+
+
 def _ask_href(q: str) -> str:
     """카드·칩 링크 주소: ?s=<서명토큰>&ask=<질문>.
     새로고침돼도 로그인이 유지되도록 서버가 서명한 토큰을 싣는다
@@ -1154,7 +1166,10 @@ def my_welfare_cards():
 def header_nav(client):
     st.markdown(
         '<div class="util"><div class="gov-wrap">'
-        '<span>로그인</span><span>회원가입</span><span>사이트맵</span><span>English</span>'
+        f'<a href="{_nav_href("home")}" target="_self">홈</a>'
+        f'<a href="{_nav_href("mywelfare")}" target="_self">내 맞춤복지</a>'
+        f'<a href="{_nav_href("services")}" target="_self">전체 서비스</a>'
+        f'<a href="{_nav_href("talk")}" target="_self">AI 상담</a>'
         '</div></div>', unsafe_allow_html=True)
     st.markdown('<div class="gov-wrap" style="padding-top:14px;padding-bottom:6px">',
                 unsafe_allow_html=True)
@@ -1175,9 +1190,14 @@ def header_nav(client):
             st.session_state["tab"] = "talk"
             st.rerun()
     with n:
-        st.markdown('<div class="menu"><span>복지서비스</span><span>건강·의료</span>'
-                    '<span>어르신 돌봄</span><span>공지사항</span><span>상담·문의</span></div>',
-                    unsafe_allow_html=True)
+        st.markdown(
+            '<div class="menu">'
+            f'<a href="{_nav_href("services")}" target="_self">복지서비스</a>'
+            f'<a href="{_ask_href("어르신 건강·의료 지원 서비스를 알려주세요")}" target="_self">건강·의료</a>'
+            f'<a href="{_ask_href("노인맞춤돌봄서비스가 뭐예요?")}" target="_self">어르신 돌봄</a>'
+            f'<a href="{_nav_href("home")}#notices" target="_self">공지사항</a>'
+            f'<a href="{_nav_href("talk")}" target="_self">상담·문의</a>'
+            '</div>', unsafe_allow_html=True)
         uu = st.session_state.get("auth_user", "")
         hc1, hc2 = st.columns([1.4, 1], vertical_alignment="center")
         hc1.markdown(f'<div style="text-align:right;color:#5c6b86;font-size:.9rem;'
@@ -1469,7 +1489,7 @@ def notices_block():
         new = '<span class="newtag">NEW</span>' if i == 0 else ""
         rows += (f'<div class="notice"><span class="date">{date}</span>'
                  f'<span class="t">{title}{new}</span></div>')
-    st.markdown('<div class="sec"><div class="gov-wrap">'
+    st.markdown('<div class="sec" id="notices"><div class="gov-wrap">'
                 '<h2>공지사항</h2><p class="sub">시연용 예시 공지입니다. 실제 일정은 '
                 '주민센터·대전시 누리집에서 확인하세요.</p>'
                 f'{rows}</div></div>', unsafe_allow_html=True)
@@ -1732,6 +1752,18 @@ def main():
 
     # 포털부터 어시스턴트 필요 — 지연 로딩(화면은 먼저 뜨고, 첫 질문에서만 준비).
     client = _LazyClient()
+
+    # 상단 메뉴 링크: ?s=<token>&tab=<탭> → 그 탭으로 이동(s 는 유지).
+    if "tab" in st.query_params:
+        t = st.query_params["tab"]
+        try:
+            del st.query_params["tab"]
+        except Exception:
+            pass
+        if t in _TABS:
+            st.session_state["tab"] = t
+            st.session_state.pop("mode", None)          # 음성 모드였으면 일반 화면으로
+            st.session_state["view"] = "대전노인복지HUB (어르신)"
 
     # A category card links to ?s=<token>&ask=<question>; handle ask, keep s(로그인).
     if "ask" in st.query_params:
