@@ -10,6 +10,8 @@ abnormal-signal monitor.
 Run with the SAME interpreter that has the models installed:
     python -m streamlit run app.py
 """
+from __future__ import annotations   # Python 3.8/3.9 에서도 'dict | None' 표기 허용
+
 import streamlit as st
 
 from src import config
