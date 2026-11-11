@@ -24,6 +24,14 @@ import os
 from collections import defaultdict
 from pathlib import Path
 
+# 네이티브 크래시(bus error) 방지 — torch/OpenMP/pyarrow 라이브러리 충돌을 막는다.
+# worker_server.py 와 동일한 가드. 이 평가 스크립트는 (워커 프로세스가 아니라)
+# 메인 프로세스에서 모델을 직접 로드하므로, 반드시 heavy import 이전에 설정해야
+# Apple Silicon 등에서 'zsh: bus error' 로 죽지 않는다.
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 # 재현성: 신호는 규칙 기반이 기본(원하면 USE_LLM_SIGNAL=1), 검색은 결정형 경로.
 os.environ.setdefault("USE_LLM_SIGNAL", "0")
 os.environ.setdefault("USE_AGENT", "0")
