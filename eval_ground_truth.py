@@ -40,7 +40,8 @@ from src import config  # noqa: E402
 from src.abnormal_signal import AbnormalSignalDetector, SentimentAnalyzer  # noqa: E402
 from src.rag_pipeline import RagPipeline  # noqa: E402
 from src.router import is_off_domain  # noqa: E402  (실서비스의 범위 밖 판정 경로)
-from src.llm import make_llm  # noqa: E402       (신호 LLM 심판 — USE_LLM_SIGNAL=1)
+from src.llm import (make_llm, build_answer_prompt,  # noqa: E402
+                     ANSWER_SYSTEM_PROMPT, OFF_DOMAIN_REPLY)
 
 EVAL_DIR = Path("data/eval")
 LEVELS = ["정상", "주의", "위험"]
@@ -117,6 +118,65 @@ def evaluate_rag(rag: RagPipeline, rows) -> dict:
         "per_topic": {k: {"hit1": v[0], "hit3": v[1], "n": v[2],
                           "hit3_rate": v[1] / v[2] if v[2] else 0.0}
                       for k, v in per_topic.items()},
+    }
+
+
+# --------------------------------------------------------------------------
+# 1b) 답변 정확도 — fact-coverage (정답지의 facts 가 답변에 실제로 담겼는가)
+#     검색 Hit@K 는 '근거가 상위에 왔는가'만 보지만, 이 지표는 '생성된 답변'이
+#     핵심 사실(금액·기관·나이 등)을 담았는지를 본다. LLM 로 답변을 생성하므로
+#     EVAL_ANSWERS=1 일 때만 동작(느리고 Ollama 필요).
+# --------------------------------------------------------------------------
+def _norm(s: str) -> str:
+    """사실 매칭용 정규화: 공백 제거(‘33만 원’ ↔ ‘33만원’, ‘만 65세’ ⊇ ‘65세’)."""
+    return "".join((s or "").split())
+
+
+def _grounded_answer(rag, llm, question: str) -> str:
+    """결정형 RAG 답변(검색→게이트→근거 기반 생성). 실서비스 결정형 경로와 동일."""
+    retrieved = rag.retrieve(question, top_k=3)
+    top = retrieved[0].score if retrieved else 0.0
+    if not retrieved or top < config.RAG_MIN_RELEVANCE:
+        return OFF_DOMAIN_REPLY
+    contexts = [r.text for r in retrieved]
+    prompt = build_answer_prompt(question, contexts)
+    return llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT, num_predict=256)
+
+
+def evaluate_answers(rag, llm, in_rows) -> dict:
+    """각 정보 질문에 답변을 생성하고, 정답지 facts 중 몇 개가 담겼는지 측정.
+    - fact-coverage = (답변에 등장한 gold fact 수) / (gold fact 수)  평균
+    - pass(≥50% 사실 포함) 비율도 함께 보고(주제별 포함)."""
+    total = 0.0
+    passed = 0
+    n = 0
+    per_topic = defaultdict(lambda: [0.0, 0])      # topic -> [coverage합, n]
+    samples = []
+    for r in in_rows:
+        facts = [f for f in (r.get("facts") or []) if f]
+        if not facts:
+            continue
+        ans = _grounded_answer(rag, llm, r["q"])
+        a = _norm(ans)
+        hit = sum(1 for f in facts if _norm(f) in a)
+        cov = hit / len(facts)
+        total += cov
+        n += 1
+        if cov >= 0.5:
+            passed += 1
+        pt = per_topic[r["topic"]]
+        pt[0] += cov
+        pt[1] += 1
+        if len(samples) < 5:
+            samples.append({"q": r["q"], "cov": cov, "hit": hit,
+                            "total": len(facts), "ans": ans[:80].replace("\n", " ")})
+    return {
+        "n": n,
+        "mean_coverage": total / n if n else 0.0,
+        "pass_rate": passed / n if n else 0.0,
+        "per_topic": {k: {"coverage": v[0] / v[1] if v[1] else 0.0, "n": v[1]}
+                      for k, v in per_topic.items()},
+        "samples": samples,
     }
 
 
@@ -209,6 +269,25 @@ def main():
     print(f"  [범위 밖 거절]  {rr['refused']}/{rr['n_out']} = {rr['refuse_rate']:.0%}"
           f"  (관련성 게이트 {rr['gate']})")
 
+    # 1b) 답변 정확도(fact-coverage) — EVAL_ANSWERS=1 일 때만(느리고 Ollama 필요).
+    ans_res = None
+    if os.environ.get("EVAL_ANSWERS") not in (None, "", "0", "false", "False"):
+        print("\n" + "=" * 66)
+        print(" 1b) 답변 정확도 — fact-coverage (facts 가 답변에 담겼는가)")
+        print("=" * 66)
+        a_llm = make_llm()
+        print(f"  답변 모델: {type(a_llm).__name__}:{a_llm.model} "
+              f"({'ON' if a_llm.available else '사용 불가'})")
+        if a_llm.available:
+            in_rows = [r for r in rag_rows if r.get("scope") == "in"]
+            ans_res = evaluate_answers(rag, a_llm, in_rows)
+            for topic, v in ans_res["per_topic"].items():
+                print(f"  {topic:<10} fact-coverage {v['coverage']:.0%}  (n={v['n']})")
+            print(f"\n  [전체] 평균 fact-coverage = {ans_res['mean_coverage']:.0%}"
+                  f"   ·  사실 ≥50% 포함(pass) = {ans_res['pass_rate']:.0%}  (n={ans_res['n']})")
+        else:
+            print("  (LLM 미연결 → 건너뜀. Ollama 실행 후 EVAL_ANSWERS=1 로 다시 실행)")
+
     print("\n" + "=" * 66)
     print(" 2) 이상신호 감지 (정상/주의/위험 3단계)")
     print("=" * 66)
@@ -244,7 +323,11 @@ def main():
     print(f"  신호  : 3단계 Acc {ss['accuracy3']:.0%} | 이상 F1 {b['f1']:.2f} | "
           f"위험 Recall {ss['danger_recall']:.0%}")
 
-    results = {"rag": rr, "signal": ss,
+    if ans_res:
+        print(f"  답변  : 평균 fact-coverage {ans_res['mean_coverage']:.0%} | "
+              f"사실 pass {ans_res['pass_rate']:.0%}")
+
+    results = {"rag": rr, "answers": ans_res, "signal": ss,
                "backend": f"{rag.backend}/{rag.embedder.backend}",
                "use_llm_signal": config.USE_LLM_SIGNAL}
     out = EVAL_DIR / "results.json"
@@ -252,13 +335,13 @@ def main():
     print(f"\n  → 상세 결과 저장: {out}")
 
     # 재현 가능한 리포트(저장소에 커밋): README 수치의 출처가 된다.
-    report = _render_report(rr, ss, results["backend"], config.USE_LLM_SIGNAL)
+    report = _render_report(rr, ss, results["backend"], config.USE_LLM_SIGNAL, ans_res)
     rep = EVAL_DIR / "eval_report.md"
     rep.write_text(report, encoding="utf-8")
     print(f"  → 리포트 저장(커밋용): {rep}")
 
 
-def _render_report(rr, ss, backend, use_llm_signal) -> str:
+def _render_report(rr, ss, backend, use_llm_signal, ans_res=None) -> str:
     """사람이 읽는 평가 리포트(마크다운). README 가 인용하는 '진짜 수치'의 출처."""
     from datetime import datetime, timezone
     b = ss["binary"]
@@ -280,6 +363,15 @@ def _render_report(rr, ss, backend, use_llm_signal) -> str:
     lines.append("|---|---|---|")
     for topic, v in rr["per_topic"].items():
         lines.append(f"| {topic} | {v['hit3']}/{v['n']} | {v['hit3_rate']:.0%} |")
+    if ans_res:
+        lines.append("\n## 1b) 답변 정확도 — fact-coverage\n")
+        lines.append("생성된 답변이 정답지 `facts`(금액·기관·나이 등)를 얼마나 담았는가.\n")
+        lines.append(f"- **평균 fact-coverage = {ans_res['mean_coverage']:.0%}**")
+        lines.append(f"- **사실 ≥50% 포함(pass) = {ans_res['pass_rate']:.0%}** (n={ans_res['n']})\n")
+        lines.append("| 주제 | fact-coverage |")
+        lines.append("|---|---|")
+        for topic, v in ans_res["per_topic"].items():
+            lines.append(f"| {topic} | {v['coverage']:.0%} (n={v['n']}) |")
     lines.append("\n## 2) 이상신호 감지 (정상/주의/위험)\n")
     lines.append(f"- 3단계 정확도 = **{ss['accuracy3']:.0%}**")
     lines.append(f"- 이진(이상 여부) F1 = **{b['f1']:.2f}** (P {b['precision']:.0%} / R {b['recall']:.0%})")
