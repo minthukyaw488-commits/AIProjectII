@@ -455,6 +455,29 @@ def inject_css():
       }}
     </style>
     """, unsafe_allow_html=True)
+    st.markdown(_PAGE_MARGIN_CSS, unsafe_allow_html=True)
+
+
+# 페이지 좌우 여백(표준 폭) — 화면 끝에 붙던 입력창·버튼·채팅에 여백을 준다.
+# 기능 코드는 건드리지 않고 CSS 만 덧붙인다.
+#  · 본문 블록: 최대 1180px, 가운데 정렬, 좌우 16~40px(화면 크기에 따라)
+#  · 배경이 화면 끝까지 가야 하는 상단 띠(.util)·배너(.hero)·푸터(.foot)는 제외
+_TOP = '.block-container > [data-testid="stVerticalBlock"] > '
+_BODY = _TOP + ':not(:has(.util, .hero, .foot))'
+_PAGE_MARGIN_CSS = f"""
+<style>
+  {_BODY}{{width:100% !important; max-width:1180px !important;
+    margin-left:auto !important; margin-right:auto !important; box-sizing:border-box;
+    padding-left:clamp(16px,4vw,40px) !important; padding-right:clamp(16px,4vw,40px) !important}}
+  {_BODY} .gov-wrap{{padding-left:0 !important; padding-right:0 !important}}
+  /* 상단 메뉴 글자가 '복/지/서/비/스'처럼 한 글자씩 세로로 끊기지 않게 */
+  .menu{{flex-wrap:wrap; row-gap:4px}}
+  .menu > *{{white-space:nowrap; padding-left:11px !important; padding-right:11px !important}}
+</style>
+"""
+
+# 로그인·내 정보 화면은 폼이 너무 넓게 퍼지지 않도록 가운데 좁은 폭으로.
+_NARROW_FORM_CSS = "<style>" + _BODY + "{{max-width:{w}px !important}}</style>"
 
 
 def inject_pwa():
@@ -993,6 +1016,7 @@ def _ask_href(q: str) -> str:
 def login_screen():
     """1단계 — 로그인(성함 기반, 프로토타입). 성공하면 auth_user 설정."""
     inject_css()
+    st.markdown(_NARROW_FORM_CSS.format(w=520), unsafe_allow_html=True)
     st.markdown('<div class="gov-wrap sec" style="max-width:500px;margin:7vh auto">',
                 unsafe_allow_html=True)
     st.markdown(
@@ -1043,6 +1067,7 @@ def login_screen():
 def profile_screen():
     """2단계 — 내 정보 입력. 저장하면 profile_done 설정 후 포털로."""
     inject_css()
+    st.markdown(_NARROW_FORM_CSS.format(w=660), unsafe_allow_html=True)
     p = st.session_state.get("profile", {})
     user = st.session_state.get("auth_user", "")
     st.markdown('<div class="gov-wrap sec" style="max-width:620px;margin:5vh auto">',
