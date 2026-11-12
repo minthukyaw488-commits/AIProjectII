@@ -29,6 +29,7 @@ from . import config
 from .llm import (ANSWER_SYSTEM_PROMPT, OFF_DOMAIN_REPLY, build_answer_prompt,
                   clean_answer)
 from .pipeline import TurnResult, WelfareAssistant
+from .rag_pipeline import cite_label
 from .router import is_off_domain, is_smalltalk
 
 
@@ -96,8 +97,9 @@ class WelfareAgent:
         lines, sources = [], []
         for h in hits:
             lines.append(f"({h.source}) {h.text[:300]}")
-            if h.source not in sources:
-                sources.append(h.source)
+            lbl = cite_label(h)
+            if lbl not in sources:
+                sources.append(lbl)            # 인용에 쪽/연도 포함
         return ToolResult("\n".join(lines), sources, top)
 
     # -- main entry --------------------------------------------------------
@@ -284,8 +286,9 @@ class WelfareAgent:
                 continue
             kept.append((sq, [h.text for h in hits]))
             for h in hits:
-                if h.source not in sources:
-                    sources.append(h.source)
+                lbl = cite_label(h)
+                if lbl not in sources:
+                    sources.append(lbl)
             if verbose:
                 print(f"   ⟳ [gather] '{sq}' → 점수 {top:.2f}, 출처 {hits[0].source}")
         if not kept:                           # nothing relevant -> safe referral
@@ -345,7 +348,7 @@ class WelfareAgent:
         contexts = [h.text for h in hits]
         prompt = build_answer_prompt(question, contexts)
         answer = clean_answer(self.bot.llm.generate(prompt, system=self.bot.answer_system))
-        return answer, [h.source for h in hits]
+        return answer, [cite_label(h) for h in hits]
 
 
 _AGENT_SYSTEM = (
