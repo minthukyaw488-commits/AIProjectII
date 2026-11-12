@@ -1036,10 +1036,22 @@ def login_screen():
         st.rerun()
 
     tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
+    # 입력란을 st.form 으로 묶어, 노트북에서는 Enter, 휴대폰에서는 키보드의
+    # '이동/완료' 만 눌러도 로그인·회원가입이 되게 한다(버튼 클릭도 그대로 동작).
+    # form 버튼도 기존 로그인 버튼과 같은 파란 그라데이션으로 보이게.
+    # (이 style 은 로그인 화면을 그릴 때만 페이지에 있으므로 다른 화면의 form 은 그대로)
+    st.markdown(
+        '<style>div[data-testid="stForm"] button[kind="primaryFormSubmit"]{'
+        'background:linear-gradient(135deg,#2f6bff,#0f2f6f) !important;border:none !important;'
+        'box-shadow:0 12px 24px -10px #2f6bff88 !important}</style>',
+        unsafe_allow_html=True)
     with tab_login:
-        name = st.text_input("성함", key="li_name", placeholder="예: 홍길동")
-        pw = st.text_input("비밀번호", key="li_pw", type="password")
-        if st.button("로그인", type="primary", use_container_width=True):
+        with st.form("login_form", border=False):
+            name = st.text_input("성함", key="li_name", placeholder="예: 홍길동")
+            pw = st.text_input("비밀번호", key="li_pw", type="password")
+            submitted = st.form_submit_button("로그인", type="primary",
+                                              use_container_width=True)
+        if submitted:
             ok, msg = db.login_check(name.strip(), pw)
             if ok:
                 _enter(name.strip())
@@ -1047,10 +1059,13 @@ def login_screen():
                 st.warning(msg)
     with tab_signup:
         st.caption("처음이시면 계정을 만들어 주세요. (비밀번호 4자 이상)")
-        n2 = st.text_input("성함", key="su_name", placeholder="예: 홍길동")
-        p2 = st.text_input("비밀번호", key="su_pw", type="password")
-        p3 = st.text_input("비밀번호 확인", key="su_pw2", type="password")
-        if st.button("회원가입", type="primary", use_container_width=True):
+        with st.form("signup_form", border=False):
+            n2 = st.text_input("성함", key="su_name", placeholder="예: 홍길동")
+            p2 = st.text_input("비밀번호", key="su_pw", type="password")
+            p3 = st.text_input("비밀번호 확인", key="su_pw2", type="password")
+            submitted2 = st.form_submit_button("회원가입", type="primary",
+                                               use_container_width=True)
+        if submitted2:
             if p2 != p3:
                 st.warning("비밀번호가 서로 다릅니다.")
             else:
