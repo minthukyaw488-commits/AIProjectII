@@ -146,6 +146,27 @@ def build_personal_system(profile, question: str = "",
     return base + block + _eligibility_note(profile, question)
 
 
+import re as _re
+_URL_RE = _re.compile(r"(?:https?://|www\.)[^\s)>\]]+", _re.IGNORECASE)
+
+
+def clean_answer(text: str) -> str:
+    """답변에서 URL(웹주소)을 결정적으로 제거한다.
+
+    시스템 프롬프트가 URL 금지를 지시하지만, 작은 온디바이스 모델(2.4B)이 검색
+    문서의 주소(예: http://online.bokjiro.go.kr)를 그대로 옮겨 적는 경우가 있다.
+    어르신용이라 URL은 쓸모가 없고 프롬프트 규칙에도 어긋나므로, 생성 후 제거한다.
+    (평가지표 fact-coverage 로 드러난 실제 버그를 생성 단계에서 차단.)"""
+    if not text:
+        return text
+    t = _URL_RE.sub("", text)
+    t = _re.sub(r"\(\s*\)", "", t)          # URL 제거 후 남은 빈 괄호 ( )
+    t = _re.sub(r"\(\s*$", "", t)           # 줄 끝에 매달린 여는 괄호 (
+    t = _re.sub(r"[ \t]{2,}", " ", t)       # 중복 공백
+    t = _re.sub(r"\s+([.,)])", r"\1", t)    # 구두점 앞 공백
+    return t.strip()
+
+
 # Warm, chatbot-like replies for greetings / small talk (no RAG, no refusal).
 SMALLTALK_SYSTEM_PROMPT = (
     "당신은 대전광역시 독거노인을 돕는 따뜻하고 친근한 복지 도우미입니다. "

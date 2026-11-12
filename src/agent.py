@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Tuple
 
 from . import config
-from .llm import ANSWER_SYSTEM_PROMPT, OFF_DOMAIN_REPLY, build_answer_prompt
+from .llm import (ANSWER_SYSTEM_PROMPT, OFF_DOMAIN_REPLY, build_answer_prompt,
+                  clean_answer)
 from .pipeline import TurnResult, WelfareAssistant
 from .router import is_off_domain, is_smalltalk
 
@@ -224,8 +225,8 @@ class WelfareAgent:
         on the gathered evidence (keeps answer quality independent of the agent
         model, which may be weaker/less Korean-native)."""
         prompt = build_answer_prompt(question, contexts)
-        return self.bot.llm.generate(prompt, system=self.bot.answer_system,
-                                     num_predict=num_predict)
+        return clean_answer(self.bot.llm.generate(
+            prompt, system=self.bot.answer_system, num_predict=num_predict))
 
     # -- Phase 2: multi-intent planner ------------------------------------
     def _plan(self, question: str, verbose: bool = False) -> List[str]:
@@ -343,7 +344,7 @@ class WelfareAgent:
             return OFF_DOMAIN_REPLY, []
         contexts = [h.text for h in hits]
         prompt = build_answer_prompt(question, contexts)
-        answer = self.bot.llm.generate(prompt, system=self.bot.answer_system)
+        answer = clean_answer(self.bot.llm.generate(prompt, system=self.bot.answer_system))
         return answer, [h.source for h in hits]
 
 
