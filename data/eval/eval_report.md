@@ -1,8 +1,8 @@
 # 평가 리포트 (자동 생성)
 
-- 생성 시각(UTC): 2026-11-14 07:29
+- 생성 시각(UTC): 2026-11-14 13:32
 - 백엔드: `chroma/sentence-transformers:BAAI/bge-m3`
-- 답변 경로: 결정형 검색(USE_AGENT=0)  · 신호 LLM 심판: OFF(규칙 기반)
+- 답변 경로: 결정형 검색(USE_AGENT=0)  · 신호 LLM 심판: ON
 - 재현 명령: `RAG_REINDEX=1 python eval_ground_truth.py`
 
 > 주의: Hit@K·거절률은 검색 전용 지표라 답변 경로(USE_AGENT)와 무관합니다.

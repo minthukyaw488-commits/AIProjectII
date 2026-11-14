@@ -242,5 +242,5 @@
     ]
   },
   "backend": "chroma/sentence-transformers:BAAI/bge-m3",
-  "use_llm_signal": false
+  "use_llm_signal": true
 }
