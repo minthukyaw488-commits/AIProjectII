@@ -254,6 +254,15 @@ RAG_REINDEX=1 python eval_ground_truth.py     # 검색 Hit@1/Hit@3 · 범위 밖
   ```bash
   EVAL_ANSWERS=1 USE_LLM_SIGNAL=1 python eval_ground_truth.py
   ```
+- **엄밀한 검색 지표(Recall@3 · MRR)**: Hit@K 보다 엄밀하게, 사람이 라벨링한
+  정답 근거(문서·쪽)를 상위 K개에 가져오는지 측정합니다. 라벨은 (문서, 쪽) 단위라
+  재색인에도 안정적입니다.
+
+  ```bash
+  python make_recall_labels.py     # 1) 라벨 풀 생성(data/eval/recall_pool.jsonl)
+  #   2) recall_pool.jsonl 에서 정답 근거 줄의 "relevant" 를 1 로 표시(사람 라벨링)
+  python eval_recall.py            # 3) Recall@3 · Precision@3 · MRR
+  ```
 - **한계(정직한 고지)**: 평가셋은 자체 제작(독립 held-out 미구성), 검색 지표는 키워드
   부분일치 기반입니다. 답변 품질(충실성·사실성)은 사람/LLM 평가로 보강이 필요합니다.
 

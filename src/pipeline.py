@@ -27,8 +27,8 @@ from . import config
 from .abnormal_signal import AbnormalSignalDetector, SignalResult
 from .alerts import AlertDispatcher
 from .llm import (ANSWER_SYSTEM_PROMPT, OFF_DOMAIN_REPLY, SMALLTALK_SYSTEM_PROMPT,
-                  build_answer_prompt, build_personal_system, make_llm)
-from .rag_pipeline import RagPipeline
+                  build_answer_prompt, build_personal_system, clean_answer, make_llm)
+from .rag_pipeline import RagPipeline, cite_label
 from .router import is_smalltalk, is_off_domain
 
 
@@ -122,7 +122,7 @@ class WelfareAssistant:
         # 답변이 중간에 끊기지 않도록 생성 토큰 여유를 둔다(기본 130 → 256).
         answer = self.llm.generate(prompt, system=self.answer_system,
                                    num_predict=256)
-        return answer, [r.source for r in retrieved]
+        return clean_answer(answer), [cite_label(r) for r in retrieved]
 
     def _smalltalk_reply(self, question: str) -> str:
         """Warm, human reply to a greeting. Uses the LLM with a friendly persona;

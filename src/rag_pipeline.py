@@ -16,7 +16,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Tuple
 
 from . import config
 from .embeddings import EmbeddingModel
@@ -30,11 +30,22 @@ from .embeddings import EmbeddingModel
 _OCR_MIN_CHARS_PER_PAGE = 20
 
 
-def load_text_from_pdf(pdf_path: Path) -> str:
-    """Extract text from a PDF using pdfplumber, with OCR fallback.
+_YEAR_RE = re.compile(r"(20\d{2})")
 
-    Digital PDFs are read directly. Scanned/image pages (little or no
-    extractable text) are passed to Tesseract Korean OCR when it is installed.
+
+def _doc_date(name: str) -> str:
+    """Pull a publication year (e.g. 2025) from the file name for citation.
+    Returns '' when none is found. Cheap, deterministic, no file read."""
+    m = _YEAR_RE.search(name or "")
+    return m.group(1) if m else ""
+
+
+def load_pages_from_pdf(pdf_path: Path) -> List[Tuple[int, str]]:
+    """Extract a PDF as [(page_number_1based, text), …] with OCR fallback.
+
+    Keeping page boundaries lets each chunk carry the page it came from, so a
+    citation can point the reader to "…pdf · p.12" instead of just the file.
+    Digital pages are read directly; scanned/image pages go to Tesseract OCR.
     """
     import pdfplumber
     parts: List[str] = []
@@ -51,7 +62,12 @@ def load_text_from_pdf(pdf_path: Path) -> str:
         for i, text in ocr_text.items():
             parts[i] = text
     parts = _strip_running_headers(parts)
-    return "\n".join(parts)
+    return [(i + 1, t) for i, t in enumerate(parts)]
+
+
+def load_text_from_pdf(pdf_path: Path) -> str:
+    """Whole-PDF text (backward-compatible). Pages joined with newlines."""
+    return "\n".join(t for _, t in load_pages_from_pdf(pdf_path))
 
 
 def _strip_running_headers(pages: List[str]) -> List[str]:
@@ -206,22 +222,32 @@ def _table_rows_to_text(rows: List[List[str]]) -> List[str]:
 
 
 def load_documents(docs_dir: Path = config.WELFARE_DOCS_DIR) -> List[dict]:
-    """Load every supported file in docs_dir. Returns [{source, text}]."""
+    """Load every supported file in docs_dir.
+
+    Returns [{source, date, segments}] where ``segments`` is a list of
+    (page | None, text). 발행 연도(date)는 인용에 쓰지만, PDF는 전체 문서를 한
+    덩어리로 청킹한다(page=None): 쪽 단위 청킹이 페이지 경계에서 문맥을 잘라
+    일부 주제의 검색 성능을 낮췄기 때문(Hit@3 75%→73%). 쪽 번호 인용이 필요하면
+    문맥을 자르지 않는 방식으로 별도 도입할 것.
+    """
     docs: List[dict] = []
     for path in sorted(docs_dir.glob("*")):
         # 명단/현황 스프레드시트는 검색 노이즈 → 색인 제외(config.RAG_EXCLUDE_DOCS).
         if any(tok in path.name for tok in config.RAG_EXCLUDE_DOCS):
             continue
-        if path.suffix.lower() == ".pdf":
-            text = load_text_from_pdf(path)
-        elif path.suffix.lower() in {".md", ".txt"}:
-            text = path.read_text(encoding="utf-8")
-        elif path.suffix.lower() in {".csv", ".xls", ".xlsx"}:
-            text = load_text_from_table(path)
+        suffix = path.suffix.lower()
+        if suffix == ".pdf":
+            segments: List[Tuple[Optional[int], str]] = [(None, load_text_from_pdf(path))]
+        elif suffix in {".md", ".txt"}:
+            segments = [(None, path.read_text(encoding="utf-8"))]
+        elif suffix in {".csv", ".xls", ".xlsx"}:
+            segments = [(None, load_text_from_table(path))]
         else:
             continue
-        if text.strip():
-            docs.append({"source": path.name, "text": text})
+        segments = [(pg, t) for pg, t in segments if t and t.strip()]
+        if segments:
+            docs.append({"source": path.name, "date": _doc_date(path.name),
+                         "segments": segments})
     return docs
 
 
@@ -349,6 +375,18 @@ class Retrieved:
     text: str
     source: str
     score: float
+    page: Optional[int] = None     # PDF 쪽 번호(있으면 인용에 표시)
+    date: str = ""                 # 발행 연도(파일명 기준)
+
+
+def cite_label(r: "Retrieved") -> str:
+    """사람이 읽는 출처 표기: '[2025] 파일명 · p.12' (연도/쪽이 있으면 덧붙임)."""
+    label = r.source
+    if r.page:
+        label += f" · p.{r.page}"
+    if r.date:
+        label = f"[{r.date}] {label}"
+    return label
 
 
 class _InMemoryStore:
@@ -374,7 +412,8 @@ class _InMemoryStore:
             ((cos(embedding, v), d, m) for v, d, m in zip(self._vecs, self._docs, self._meta)),
             key=lambda t: t[0], reverse=True,
         )[:top_k]
-        return [Retrieved(text=d, source=m.get("source", "?"), score=float(s))
+        return [Retrieved(text=d, source=m.get("source", "?"), score=float(s),
+                          page=m.get("page"), date=m.get("date", ""))
                 for s, d, m in scored]
 
     def count(self):
@@ -447,15 +486,22 @@ class RagPipeline:
         dropped = 0
         for doc in documents:
             kept = 0
-            for chunk in chunk_text(doc["text"]):
-                if is_low_quality(chunk):
-                    dropped += 1
-                    per_source_dropped[doc["source"]] += 1
-                    continue
-                chunks.append(chunk)
-                metadatas.append({"source": doc["source"], "chunk": kept})
-                ids.append(f"{doc['source']}::{kept}")
-                kept += 1
+            date = doc.get("date", "")
+            for page, seg_text in doc["segments"]:
+                for chunk in chunk_text(seg_text):
+                    if is_low_quality(chunk):
+                        dropped += 1
+                        per_source_dropped[doc["source"]] += 1
+                        continue
+                    chunks.append(chunk)
+                    meta = {"source": doc["source"], "chunk": kept}
+                    if page is not None:
+                        meta["page"] = page          # 인용에 '· p.N' 표시
+                    if date:
+                        meta["date"] = date          # 발행 연도(파일명 기준)
+                    metadatas.append(meta)
+                    ids.append(f"{doc['source']}::{kept}")
+                    kept += 1
             per_source_kept[doc["source"]] = kept
 
         # Files present but not indexed (unsupported type, or empty after load).
@@ -506,7 +552,8 @@ class RagPipeline:
             for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0],
                                        res["distances"][0]):
                 out.append(Retrieved(text=doc, source=meta.get("source", "?"),
-                                     score=1.0 - float(dist)))  # cosine dist -> sim
+                                     score=1.0 - float(dist),  # cosine dist -> sim
+                                     page=meta.get("page"), date=meta.get("date", "")))
             return out
         return self._collection.query(q_emb, n)
 

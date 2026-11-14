@@ -32,3 +32,6 @@ data/feedback.jsonl
 
 # 이상신호 알림(파일 폴백)
 data/alerts.json
+
+# URL 로그인 토큰 서명 비밀키(절대 커밋 금지)
+data/.app_secret

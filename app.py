@@ -40,11 +40,16 @@ ICONS = {
     "case": f'{_S}<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M3 12h18"/></svg>',
 }
 POPULAR = ["기초연금", "치매 검진", "노인일자리", "에너지 바우처", "경로우대", "방문간호"]
+# (날짜, 제목, 누르면 AI 상담에 보낼 질문)
 NOTICES = [
-    ("2026-08-20", "2026년 기초연금 선정기준액 인상 안내"),
-    ("2026-08-14", "겨울철 에너지바우처 신청 접수 시작"),
-    ("2026-08-05", "치매안심센터 무료 조기검진 프로그램 운영"),
-    ("2026-07-28", "노인맞춤돌봄서비스 신규 대상자 모집"),
+    ("2026-08-20", "2026년 기초연금 선정기준액 인상 안내",
+     "기초연금 선정기준액이 얼마인가요? 저도 받을 수 있나요?"),
+    ("2026-08-14", "겨울철 에너지바우처 신청 접수 시작",
+     "에너지바우처는 누가 받을 수 있고 어떻게 신청하나요?"),
+    ("2026-08-05", "치매안심센터 무료 조기검진 프로그램 운영",
+     "치매 조기검진은 무료인가요? 어디서 받나요?"),
+    ("2026-07-28", "노인맞춤돌봄서비스 신규 대상자 모집",
+     "노인맞춤돌봄서비스 대상과 신청 방법을 알려주세요"),
 ]
 
 
@@ -122,7 +127,8 @@ def inject_css():
       /* top utility bar */
       .util{{background:{navy2}; color:#c7d4ee; font-size:.82rem}}
       .util .gov-wrap{{display:flex; justify-content:flex-end; gap:22px; padding:9px 24px}}
-      .util span{{opacity:.85; cursor:pointer}} .util span:hover{{opacity:1;color:#fff}}
+      .util a{{opacity:.85; cursor:pointer; color:#c7d4ee !important; text-decoration:none !important}}
+      .util a:hover{{opacity:1; color:#fff !important}}
 
       /* header + nav */
       .gnav{{background:rgba(255,255,255,.9); backdrop-filter:saturate(1.4) blur(8px);
@@ -135,9 +141,10 @@ def inject_css():
         display:flex;align-items:center;justify-content:center;font-size:1.25rem;
         box-shadow:0 6px 16px -4px {accent}66}}
       .menu{{display:flex; gap:8px; font-weight:600; font-size:1.02rem}}
-      .menu span{{padding:9px 15px; border-radius:11px; color:{muted}; cursor:pointer;
-        transition:all .15s}}
-      .menu span:hover{{background:{surface2}; color:{navy}}}
+      .menu{{flex-wrap:wrap}}
+      .menu a{{padding:9px 12px; border-radius:11px; color:{muted} !important; cursor:pointer;
+        transition:all .15s; text-decoration:none !important; white-space:nowrap}}
+      .menu a:hover{{background:{surface2}; color:{navy} !important}}
 
       /* hero - full-bleed short banner with illustration background */
       .hero .gov-wrap{{padding:0; max-width:100%}}
@@ -263,6 +270,9 @@ def inject_css():
         border-bottom:1px solid {line}; font-size:1.05rem; border-radius:12px;
         transition:background .15s}}
       .notice:hover{{background:{surface2}}}
+      a.notice{{text-decoration:none !important; cursor:pointer; color:inherit}}
+      a.notice .go{{margin-left:auto; color:#2f6bff; font-size:.9rem; font-weight:700;
+        white-space:nowrap}}
       .notice .date{{color:#8493ac; font-variant-numeric:tabular-nums; min-width:104px;
         font-size:.95rem}}
       .notice .t{{font-weight:600; color:{ink}}}
@@ -445,6 +455,29 @@ def inject_css():
       }}
     </style>
     """, unsafe_allow_html=True)
+    st.markdown(_PAGE_MARGIN_CSS, unsafe_allow_html=True)
+
+
+# 페이지 좌우 여백(표준 폭) — 화면 끝에 붙던 입력창·버튼·채팅에 여백을 준다.
+# 기능 코드는 건드리지 않고 CSS 만 덧붙인다.
+#  · 본문 블록: 최대 1180px, 가운데 정렬, 좌우 16~40px(화면 크기에 따라)
+#  · 배경이 화면 끝까지 가야 하는 상단 띠(.util)·배너(.hero)·푸터(.foot)는 제외
+_TOP = '.block-container > [data-testid="stVerticalBlock"] > '
+_BODY = _TOP + ':not(:has(.util, .hero, .foot))'
+_PAGE_MARGIN_CSS = f"""
+<style>
+  {_BODY}{{width:100% !important; max-width:1180px !important;
+    margin-left:auto !important; margin-right:auto !important; box-sizing:border-box;
+    padding-left:clamp(16px,4vw,40px) !important; padding-right:clamp(16px,4vw,40px) !important}}
+  {_BODY} .gov-wrap{{padding-left:0 !important; padding-right:0 !important}}
+  /* 상단 메뉴 글자가 '복/지/서/비/스'처럼 한 글자씩 세로로 끊기지 않게 */
+  .menu{{flex-wrap:wrap; row-gap:4px}}
+  .menu > *{{white-space:nowrap; padding-left:11px !important; padding-right:11px !important}}
+</style>
+"""
+
+# 로그인·내 정보 화면은 폼이 너무 넓게 퍼지지 않도록 가운데 좁은 폭으로.
+_NARROW_FORM_CSS = "<style>" + _BODY + "{{max-width:{w}px !important}}</style>"
 
 
 def inject_pwa():
@@ -954,25 +987,79 @@ def _load_user_session(name: str):
         pass
 
 
+def _app_secret() -> bytes:
+    """URL 로그인 토큰 서명용 비밀키. data/.app_secret 에 1회 생성·보관(커밋 금지).
+    서버 재시작에도 같은 키를 쓰도록 파일로 유지한다."""
+    from pathlib import Path
+    p = Path(__file__).resolve().parent / "data" / ".app_secret"
+    try:
+        if p.exists():
+            b = p.read_bytes()
+            if b:
+                return b
+        import secrets as _secrets
+        sec = _secrets.token_bytes(32)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(sec)
+        return sec
+    except Exception:
+        # 파일 접근 불가 시에도 동작은 유지(데모). 운영에선 파일 키를 권장.
+        return b"welfare-hub-insecure-fallback-change-me"
+
+
+def _user_token(name: str) -> str:
+    """성함에 대한 서명 토큰(HMAC-SHA256). 비밀키 없이는 위조 불가."""
+    import hashlib
+    import hmac
+    return hmac.new(_app_secret(), (name or "").encode("utf-8"),
+                    hashlib.sha256).hexdigest()[:24]
+
+
+def _verify_user_token(name: str, tok: str) -> bool:
+    """URL 의 ?u=성함 이 유효한 서명(?t=)과 함께 왔는지 확인(계정 도용 차단)."""
+    import hmac
+    if not name or not tok:
+        return False
+    return hmac.compare_digest(_user_token(name), tok)
+
+
+def _set_login_params(name: str):
+    """로그인 유지용 URL 파라미터 설정: ?u=성함 &t=서명토큰."""
+    st.query_params["u"] = name
+    st.query_params["t"] = _user_token(name)
+
+
 def _logout():
-    """로그아웃 → 로그인 화면으로. 세션·URL(?u=) 모두 비워 새 계정으로 로그인 가능."""
+    """로그아웃 → 로그인 화면으로. 세션·URL(?u=,?t=) 모두 비워 새 계정으로 로그인 가능."""
     for k in ("auth_user", "profile", "profile_done", "chat", "pending_q"):
         st.session_state.pop(k, None)
     st.query_params.clear()
     st.rerun()
 
 
-def _ask_href(q: str) -> str:
-    """카드·칩 링크 주소: ?u=<성함>&ask=<질문>.
-    새로고침돼도 ?u= 로 로그인이 유지되도록 성함을 함께 싣는다."""
+_TABS = ("home", "mywelfare", "talk", "services")
+
+
+def _nav_href(tab: str) -> str:
+    """상단 메뉴 링크 주소: ?u=<성함>&tab=<탭>. _ask_href 와 같은 방식으로 로그인 유지."""
     from urllib.parse import quote
     u = st.session_state.get("auth_user", "")
-    return f"?u={quote(u)}&ask={quote(q)}"
+    return f"?u={quote(u)}&tab={quote(tab)}"
+
+
+def _ask_href(q: str) -> str:
+    """카드·칩 링크 주소: ?u=<성함>&t=<서명토큰>&ask=<질문>.
+    새로고침돼도 로그인이 유지되되, 서명(t) 없이는 복원되지 않아 계정 도용을 막는다."""
+    from urllib.parse import quote
+    u = st.session_state.get("auth_user", "")
+    t = _user_token(u) if u else ""
+    return f"?u={quote(u)}&t={quote(t)}&ask={quote(q)}"
 
 
 def login_screen():
     """1단계 — 로그인(성함 기반, 프로토타입). 성공하면 auth_user 설정."""
     inject_css()
+    st.markdown(_NARROW_FORM_CSS.format(w=520), unsafe_allow_html=True)
     st.markdown('<div class="gov-wrap sec" style="max-width:500px;margin:7vh auto">',
                 unsafe_allow_html=True)
     st.markdown(
@@ -988,14 +1075,26 @@ def login_screen():
     def _enter(name: str):
         """로그인 성공 처리: 세션 설정 + 저장된 프로필·지난 대화 불러오기."""
         _load_user_session(name)
-        st.query_params["u"] = name   # 새로고침(카드 클릭) 후에도 로그인 유지
+        _set_login_params(name)       # ?u=성함 &t=서명토큰 (새로고침 후에도 로그인 유지)
         st.rerun()
 
     tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
+    # 입력란을 st.form 으로 묶어, 노트북에서는 Enter, 휴대폰에서는 키보드의
+    # '이동/완료' 만 눌러도 로그인·회원가입이 되게 한다(버튼 클릭도 그대로 동작).
+    # form 버튼도 기존 로그인 버튼과 같은 파란 그라데이션으로 보이게.
+    # (이 style 은 로그인 화면을 그릴 때만 페이지에 있으므로 다른 화면의 form 은 그대로)
+    st.markdown(
+        '<style>div[data-testid="stForm"] button[kind="primaryFormSubmit"]{'
+        'background:linear-gradient(135deg,#2f6bff,#0f2f6f) !important;border:none !important;'
+        'box-shadow:0 12px 24px -10px #2f6bff88 !important}</style>',
+        unsafe_allow_html=True)
     with tab_login:
-        name = st.text_input("성함", key="li_name", placeholder="예: 홍길동")
-        pw = st.text_input("비밀번호", key="li_pw", type="password")
-        if st.button("로그인", type="primary", use_container_width=True):
+        with st.form("login_form", border=False):
+            name = st.text_input("성함", key="li_name", placeholder="예: 홍길동")
+            pw = st.text_input("비밀번호", key="li_pw", type="password")
+            submitted = st.form_submit_button("로그인", type="primary",
+                                              use_container_width=True)
+        if submitted:
             ok, msg = db.login_check(name.strip(), pw)
             if ok:
                 _enter(name.strip())
@@ -1003,10 +1102,13 @@ def login_screen():
                 st.warning(msg)
     with tab_signup:
         st.caption("처음이시면 계정을 만들어 주세요. (비밀번호 4자 이상)")
-        n2 = st.text_input("성함", key="su_name", placeholder="예: 홍길동")
-        p2 = st.text_input("비밀번호", key="su_pw", type="password")
-        p3 = st.text_input("비밀번호 확인", key="su_pw2", type="password")
-        if st.button("회원가입", type="primary", use_container_width=True):
+        with st.form("signup_form", border=False):
+            n2 = st.text_input("성함", key="su_name", placeholder="예: 홍길동")
+            p2 = st.text_input("비밀번호", key="su_pw", type="password")
+            p3 = st.text_input("비밀번호 확인", key="su_pw2", type="password")
+            submitted2 = st.form_submit_button("회원가입", type="primary",
+                                               use_container_width=True)
+        if submitted2:
             if p2 != p3:
                 st.warning("비밀번호가 서로 다릅니다.")
             else:
@@ -1023,6 +1125,7 @@ def login_screen():
 def profile_screen():
     """2단계 — 내 정보 입력. 저장하면 profile_done 설정 후 포털로."""
     inject_css()
+    st.markdown(_NARROW_FORM_CSS.format(w=660), unsafe_allow_html=True)
     p = st.session_state.get("profile", {})
     user = st.session_state.get("auth_user", "")
     st.markdown('<div class="gov-wrap sec" style="max-width:620px;margin:5vh auto">',
@@ -1120,7 +1223,10 @@ def my_welfare_cards():
 def header_nav(client):
     st.markdown(
         '<div class="util"><div class="gov-wrap">'
-        '<span>로그인</span><span>회원가입</span><span>사이트맵</span><span>English</span>'
+        f'<a href="{_nav_href("home")}" target="_self">홈</a>'
+        f'<a href="{_nav_href("mywelfare")}" target="_self">내 맞춤복지</a>'
+        f'<a href="{_nav_href("services")}" target="_self">전체 서비스</a>'
+        f'<a href="{_nav_href("talk")}" target="_self">AI 상담</a>'
         '</div></div>', unsafe_allow_html=True)
     st.markdown('<div class="gov-wrap" style="padding-top:14px;padding-bottom:6px">',
                 unsafe_allow_html=True)
@@ -1141,9 +1247,14 @@ def header_nav(client):
             st.session_state["tab"] = "talk"
             st.rerun()
     with n:
-        st.markdown('<div class="menu"><span>복지서비스</span><span>건강·의료</span>'
-                    '<span>어르신 돌봄</span><span>공지사항</span><span>상담·문의</span></div>',
-                    unsafe_allow_html=True)
+        st.markdown(
+            '<div class="menu">'
+            f'<a href="{_nav_href("services")}" target="_self">복지서비스</a>'
+            f'<a href="{_ask_href("어르신 건강·의료 지원 서비스를 알려주세요")}" target="_self">건강·의료</a>'
+            f'<a href="{_ask_href("노인맞춤돌봄서비스가 뭐예요?")}" target="_self">어르신 돌봄</a>'
+            f'<a href="{_nav_href("home")}#notices" target="_self">공지사항</a>'
+            f'<a href="{_nav_href("talk")}" target="_self">상담·문의</a>'
+            '</div>', unsafe_allow_html=True)
         uu = st.session_state.get("auth_user", "")
         hc1, hc2 = st.columns([1.4, 1], vertical_alignment="center")
         hc1.markdown(f'<div style="text-align:right;color:#5c6b86;font-size:.9rem;'
@@ -1431,11 +1542,14 @@ def popular_block():
 
 def notices_block():
     rows = ""
-    for i, (date, title) in enumerate(NOTICES):
+    for i, (date, title, ask_q) in enumerate(NOTICES):
         new = '<span class="newtag">NEW</span>' if i == 0 else ""
-        rows += (f'<div class="notice"><span class="date">{date}</span>'
-                 f'<span class="t">{title}{new}</span></div>')
-    st.markdown('<div class="sec"><div class="gov-wrap">'
+        # 공지를 누르면 관련 질문으로 AI 상담 탭에서 바로 안내(로그인 유지)
+        rows += (f'<a class="notice" href="{_ask_href(ask_q)}" target="_self">'
+                 f'<span class="date">{date}</span>'
+                 f'<span class="t">{title}{new}</span>'
+                 f'<span class="go">자세히 ›</span></a>')
+    st.markdown('<div class="sec" id="notices"><div class="gov-wrap">'
                 '<h2>공지사항</h2><p class="sub">복지 관련 최신 소식입니다.</p>'
                 f'{rows}</div></div>', unsafe_allow_html=True)
 
@@ -1663,11 +1777,16 @@ def main():
     st.session_state.setdefault("admin_alerts", [])   # 키워드 감지 → 관리자 알림
 
     # 새로고침(카드·칩 클릭 = 전체 페이지 reload) 후에도 로그인 유지:
-    # Streamlit 세션은 reload 시 초기화되므로, URL 의 ?u=<성함> 으로 세션을 복원한다.
+    # Streamlit 세션은 reload 시 초기화되므로 URL 로 세션을 복원하되, 반드시 서명
+    # 토큰(?t=)을 검증한다. ?u=성함 만으로는 복원하지 않아 계정 도용을 막는다.
     if not st.session_state.get("auth_user"):
         _u = st.query_params.get("u")
-        if _u:
+        _t = st.query_params.get("t")
+        if _u and _verify_user_token(_u, _t):
             _load_user_session(_u)
+        elif _u:
+            # 서명 없는/위조된 ?u= 는 무시하고 URL 을 정리(로그인 화면으로).
+            st.query_params.clear()
 
     # 접속 흐름: 로그인 → 내 정보 입력 → (이후) 포털 화면.
     # 로그인·내 정보는 무거운 어시스턴트가 필요 없으므로 바로 뜬다.
@@ -1680,6 +1799,18 @@ def main():
 
     # 포털부터 어시스턴트 필요 — 지연 로딩(화면은 먼저 뜨고, 첫 질문에서만 준비).
     client = _LazyClient()
+
+    # 상단 메뉴 링크: ?u=<성함>&tab=<탭> → 그 탭으로 이동(u 는 유지).
+    if "tab" in st.query_params:
+        t = st.query_params["tab"]
+        try:
+            del st.query_params["tab"]
+        except Exception:
+            pass
+        if t in _TABS:
+            st.session_state["tab"] = t
+            st.session_state.pop("mode", None)          # 음성 모드였으면 일반 화면으로
+            st.session_state["view"] = "대전노인복지HUB (어르신)"
 
     # A category card links to ?u=<성함>&ask=<question>; handle ask, keep u(로그인).
     if "ask" in st.query_params:

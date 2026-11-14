@@ -40,7 +40,7 @@ from src import config  # noqa: E402
 from src.abnormal_signal import AbnormalSignalDetector, SentimentAnalyzer  # noqa: E402
 from src.rag_pipeline import RagPipeline  # noqa: E402
 from src.router import is_off_domain  # noqa: E402  (실서비스의 범위 밖 판정 경로)
-from src.llm import (make_llm, build_answer_prompt,  # noqa: E402
+from src.llm import (make_llm, build_answer_prompt, clean_answer,  # noqa: E402
                      ANSWER_SYSTEM_PROMPT, OFF_DOMAIN_REPLY)
 
 EVAL_DIR = Path("data/eval")
@@ -140,7 +140,7 @@ def _grounded_answer(rag, llm, question: str) -> str:
         return OFF_DOMAIN_REPLY
     contexts = [r.text for r in retrieved]
     prompt = build_answer_prompt(question, contexts)
-    return llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT, num_predict=256)
+    return clean_answer(llm.generate(prompt, system=ANSWER_SYSTEM_PROMPT, num_predict=256))
 
 
 def evaluate_answers(rag, llm, in_rows) -> dict:

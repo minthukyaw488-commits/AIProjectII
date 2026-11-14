@@ -67,6 +67,9 @@ ANSWER_SYSTEM_PROMPT = (
     "5) 비용(무료/유료·금액)이나 자격을 물으면, 참고 자료에 명시된 경우에만 그대로 "
     "답합니다. 자료에 '무료'나 금액이 없으면 '국가 보조금' 같은 추측을 하지 말고 "
     "주민센터 문의로 안내합니다.\n"
+    "6) 어려운 제도 이름은 어르신이 한눈에 알 수 있도록 쉬운 말로 풀어 줍니다. "
+    "예: '에너지바우처'는 '냉·난방비 지원', '장기요양보험'은 '요양 돌봄 지원'처럼 "
+    "쉬운 설명을 함께 적습니다.\n"
     "예시)\n"
     "질문: 기초연금은 어떻게 신청하나요?\n"
     "답변:\n"
@@ -144,6 +147,27 @@ def build_personal_system(profile, question: str = "",
         "받을 수 있는 다른 복지를 안내합니다."
     )
     return base + block + _eligibility_note(profile, question)
+
+
+import re as _re
+_URL_RE = _re.compile(r"(?:https?://|www\.)[^\s)>\]]+", _re.IGNORECASE)
+
+
+def clean_answer(text: str) -> str:
+    """답변에서 URL(웹주소)을 결정적으로 제거한다.
+
+    시스템 프롬프트가 URL 금지를 지시하지만, 작은 온디바이스 모델(2.4B)이 검색
+    문서의 주소(예: http://online.bokjiro.go.kr)를 그대로 옮겨 적는 경우가 있다.
+    어르신용이라 URL은 쓸모가 없고 프롬프트 규칙에도 어긋나므로, 생성 후 제거한다.
+    (평가지표 fact-coverage 로 드러난 실제 버그를 생성 단계에서 차단.)"""
+    if not text:
+        return text
+    t = _URL_RE.sub("", text)
+    t = _re.sub(r"\(\s*\)", "", t)          # URL 제거 후 남은 빈 괄호 ( )
+    t = _re.sub(r"\(\s*$", "", t)           # 줄 끝에 매달린 여는 괄호 (
+    t = _re.sub(r"[ \t]{2,}", " ", t)       # 중복 공백
+    t = _re.sub(r"\s+([.,)])", r"\1", t)    # 구두점 앞 공백
+    return t.strip()
 
 
 # Warm, chatbot-like replies for greetings / small talk (no RAG, no refusal).
