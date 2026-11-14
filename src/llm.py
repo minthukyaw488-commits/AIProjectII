@@ -406,7 +406,33 @@ class GeminiLLM:
                 return self._fallback(prompt, error=str(exc))
         return self._fallback(prompt, error="rate limit")
 
-    _fallback = staticmethod(OpenAILLM._fallback)
+    def generate_vision(self, prompt: str, image_bytes: bytes,
+                        mime: str = "image/jpeg", temperature: float = 0.3) -> str:
+        """이미지를 '보고' 답하는 멀티모달 호출(Gemini vision). 사진 속 글자뿐 아니라
+        표·그림·전체 맥락까지 이해한다. 키가 없으면 안내 문구를 돌려준다."""
+        if not self.available:
+            return "이미지 분석은 Gemini API 키가 설정된 경우에만 가능합니다."
+        import base64
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        body = {
+            "contents": [{"role": "user", "parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": mime, "data": b64}}]}],
+            "generationConfig": {"temperature": temperature, "maxOutputTokens": 1200},
+        }
+        url = f"{self.base_url}/models/{self.model}:generateContent?key={self.api_key}"
+        data = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=data, headers={"Content-Type": "application/json",
+                                     "User-Agent": _USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=config.LLM_TIMEOUT) as resp:
+                out = json.loads(resp.read())
+                parts = out["candidates"][0]["content"]["parts"]
+                return "".join(p.get("text", "") for p in parts).strip()
+        except Exception as exc:
+            print(f"[Gemini-vision] 실패: {exc}", file=sys.stderr)
+            return "사진을 분석하지 못했어요. 더 또렷한 사진으로 다시 올려 주세요."
 
 
 def make_llm():

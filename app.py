@@ -1422,19 +1422,42 @@ _UPLOAD_TYPES = ["png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif",
                  "pdf", "txt", "md", "csv", "docx"]
 
 
+def _gemini_key() -> str:
+    import os
+    return os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
+
+
 def _read_upload(up):
-    """업로드 파일 → (추출 텍스트, 오류메시지). OCR 결과는 파일별로 캐시해 재실행 시
-    다시 읽지 않는다. 글자를 못 찾으면 (None, 안내문)."""
+    """업로드 파일 → (추출 텍스트, 오류메시지). 결과는 파일별로 캐시한다.
+
+    - 사진(이미지)이고 Gemini 키가 있으면 **vision 으로 '보고' 읽음**(글자+맥락).
+    - 그 외(PDF·txt, 또는 키 없음)는 **OCR/텍스트 추출**(on-device, 개인정보 안전).
+    추출된 내용은 질문의 근거(attach)로 쓰여 RAG 답변에 반영된다."""
+    import os
     try:
         key = "ocr::" + str(getattr(up, "file_id", None) or up.name)
         if key in st.session_state:
             return st.session_state[key], None
-        from src.file_intake import extract_text_from_upload
-        with st.spinner("🔎 사진·문서에서 글자를 읽는 중입니다…"):
-            text, _kind = extract_text_from_upload(up.name, up.getvalue())
+        ext = os.path.splitext(up.name)[1].lower()
+        from src.file_intake import IMAGE_EXTS
+        gkey = _gemini_key()
+        if ext in IMAGE_EXTS and gkey:
+            from src.llm import GeminiLLM
+            mime = ("image/png" if ext == ".png" else
+                    "image/webp" if ext == ".webp" else
+                    "image/gif" if ext == ".gif" else "image/jpeg")
+            prompt = ("이 사진을 한국어로 읽어 주세요. 글자가 있으면 그대로 옮기고, "
+                      "고지서·안내문·약 봉투라면 무엇에 대한 것인지와 핵심"
+                      "(금액·기관·기한·용법)을 간단히 정리해 주세요.")
+            with st.spinner("🖼 사진을 분석하는 중입니다(Gemini vision)…"):
+                text = GeminiLLM(api_key=gkey).generate_vision(prompt, up.getvalue(), mime)
+        else:
+            from src.file_intake import extract_text_from_upload
+            with st.spinner("🔎 사진·문서에서 글자를 읽는 중입니다…"):
+                text, _kind = extract_text_from_upload(up.name, up.getvalue())
         if not (text or "").strip():
-            return None, ("사진에서 글자를 찾지 못했어요. 더 밝고 또렷하게, "
-                          "글자가 크게 보이도록 다시 찍어 올려 주세요.")
+            return None, ("사진에서 내용을 읽지 못했어요. 더 밝고 또렷하게, "
+                          "글자가 크게 보이도록 다시 올려 주세요.")
         st.session_state[key] = text
         return text, None
     except Exception as e:
