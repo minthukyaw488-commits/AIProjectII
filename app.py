@@ -954,8 +954,50 @@ def _load_user_session(name: str):
         pass
 
 
+def _app_secret() -> bytes:
+    """URL 로그인 토큰 서명용 비밀키. data/.app_secret 에 1회 생성·보관(커밋 금지).
+    서버 재시작에도 같은 키를 쓰도록 파일로 유지한다."""
+    from pathlib import Path
+    p = Path(__file__).resolve().parent / "data" / ".app_secret"
+    try:
+        if p.exists():
+            b = p.read_bytes()
+            if b:
+                return b
+        import secrets as _secrets
+        sec = _secrets.token_bytes(32)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(sec)
+        return sec
+    except Exception:
+        # 파일 접근 불가 시에도 동작은 유지(데모). 운영에선 파일 키를 권장.
+        return b"welfare-hub-insecure-fallback-change-me"
+
+
+def _user_token(name: str) -> str:
+    """성함에 대한 서명 토큰(HMAC-SHA256). 비밀키 없이는 위조 불가."""
+    import hashlib
+    import hmac
+    return hmac.new(_app_secret(), (name or "").encode("utf-8"),
+                    hashlib.sha256).hexdigest()[:24]
+
+
+def _verify_user_token(name: str, tok: str) -> bool:
+    """URL 의 ?u=성함 이 유효한 서명(?t=)과 함께 왔는지 확인(계정 도용 차단)."""
+    import hmac
+    if not name or not tok:
+        return False
+    return hmac.compare_digest(_user_token(name), tok)
+
+
+def _set_login_params(name: str):
+    """로그인 유지용 URL 파라미터 설정: ?u=성함 &t=서명토큰."""
+    st.query_params["u"] = name
+    st.query_params["t"] = _user_token(name)
+
+
 def _logout():
-    """로그아웃 → 로그인 화면으로. 세션·URL(?u=) 모두 비워 새 계정으로 로그인 가능."""
+    """로그아웃 → 로그인 화면으로. 세션·URL(?u=,?t=) 모두 비워 새 계정으로 로그인 가능."""
     for k in ("auth_user", "profile", "profile_done", "chat", "pending_q"):
         st.session_state.pop(k, None)
     st.query_params.clear()
@@ -963,11 +1005,12 @@ def _logout():
 
 
 def _ask_href(q: str) -> str:
-    """카드·칩 링크 주소: ?u=<성함>&ask=<질문>.
-    새로고침돼도 ?u= 로 로그인이 유지되도록 성함을 함께 싣는다."""
+    """카드·칩 링크 주소: ?u=<성함>&t=<서명토큰>&ask=<질문>.
+    새로고침돼도 로그인이 유지되되, 서명(t) 없이는 복원되지 않아 계정 도용을 막는다."""
     from urllib.parse import quote
     u = st.session_state.get("auth_user", "")
-    return f"?u={quote(u)}&ask={quote(q)}"
+    t = _user_token(u) if u else ""
+    return f"?u={quote(u)}&t={quote(t)}&ask={quote(q)}"
 
 
 def login_screen():
@@ -988,7 +1031,7 @@ def login_screen():
     def _enter(name: str):
         """로그인 성공 처리: 세션 설정 + 저장된 프로필·지난 대화 불러오기."""
         _load_user_session(name)
-        st.query_params["u"] = name   # 새로고침(카드 클릭) 후에도 로그인 유지
+        _set_login_params(name)       # ?u=성함 &t=서명토큰 (새로고침 후에도 로그인 유지)
         st.rerun()
 
     tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
@@ -1663,11 +1706,16 @@ def main():
     st.session_state.setdefault("admin_alerts", [])   # 키워드 감지 → 관리자 알림
 
     # 새로고침(카드·칩 클릭 = 전체 페이지 reload) 후에도 로그인 유지:
-    # Streamlit 세션은 reload 시 초기화되므로, URL 의 ?u=<성함> 으로 세션을 복원한다.
+    # Streamlit 세션은 reload 시 초기화되므로 URL 로 세션을 복원하되, 반드시 서명
+    # 토큰(?t=)을 검증한다. ?u=성함 만으로는 복원하지 않아 계정 도용을 막는다.
     if not st.session_state.get("auth_user"):
         _u = st.query_params.get("u")
-        if _u:
+        _t = st.query_params.get("t")
+        if _u and _verify_user_token(_u, _t):
             _load_user_session(_u)
+        elif _u:
+            # 서명 없는/위조된 ?u= 는 무시하고 URL 을 정리(로그인 화면으로).
+            st.query_params.clear()
 
     # 접속 흐름: 로그인 → 내 정보 입력 → (이후) 포털 화면.
     # 로그인·내 정보는 무거운 어시스턴트가 필요 없으므로 바로 뜬다.
