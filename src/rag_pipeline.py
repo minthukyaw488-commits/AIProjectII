@@ -225,8 +225,10 @@ def load_documents(docs_dir: Path = config.WELFARE_DOCS_DIR) -> List[dict]:
     """Load every supported file in docs_dir.
 
     Returns [{source, date, segments}] where ``segments`` is a list of
-    (page_number | None, text): PDFs keep per-page boundaries (page number for
-    citation); tables/markdown/txt are a single segment with page=None.
+    (page | None, text). 발행 연도(date)는 인용에 쓰지만, PDF는 전체 문서를 한
+    덩어리로 청킹한다(page=None): 쪽 단위 청킹이 페이지 경계에서 문맥을 잘라
+    일부 주제의 검색 성능을 낮췄기 때문(Hit@3 75%→73%). 쪽 번호 인용이 필요하면
+    문맥을 자르지 않는 방식으로 별도 도입할 것.
     """
     docs: List[dict] = []
     for path in sorted(docs_dir.glob("*")):
@@ -235,7 +237,7 @@ def load_documents(docs_dir: Path = config.WELFARE_DOCS_DIR) -> List[dict]:
             continue
         suffix = path.suffix.lower()
         if suffix == ".pdf":
-            segments: List[Tuple[Optional[int], str]] = list(load_pages_from_pdf(path))
+            segments: List[Tuple[Optional[int], str]] = [(None, load_text_from_pdf(path))]
         elif suffix in {".md", ".txt"}:
             segments = [(None, path.read_text(encoding="utf-8"))]
         elif suffix in {".csv", ".xls", ".xlsx"}:
