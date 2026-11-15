@@ -41,14 +41,39 @@ ICONS = {
 }
 POPULAR = ["기초연금", "치매 검진", "노인일자리", "에너지 바우처", "경로우대", "방문간호"]
 # (날짜, 제목, 누르면 AI 상담에 보낼 질문)
+# (날짜, 제목, 상세 본문[마크다운], AI 상담용 질문)
 NOTICES = [
     ("2026-08-20", "2026년 기초연금 선정기준액 인상 안내",
+     "2026년도 기초연금 **선정기준액이 조정**되었습니다. 만 65세 이상 어르신 중 "
+     "소득이 기준 이하이면 매월 연금을 받으실 수 있습니다.\n\n"
+     "- **대상**: 만 **65세 이상**, 소득인정액이 선정기준액 이하\n"
+     "- **신청 장소**: 가까운 **주민센터**·**국민연금공단** 또는 **복지로**(온라인)\n"
+     "- **준비물**: 신분증, 통장 사본\n"
+     "- **문의**: 가까운 주민센터 *(정확한 기준액·지급액은 주민센터에서 확인)*",
      "기초연금 선정기준액이 얼마인가요? 저도 받을 수 있나요?"),
     ("2026-08-14", "겨울철 에너지바우처 신청 접수 시작",
+     "겨울철 **냉·난방비를 지원**하는 에너지바우처 신청이 시작되었습니다.\n\n"
+     "- **대상**: 생계·의료·주거·교육급여 수급자 중 노인·영유아·장애인 등 "
+     "**더위·추위에 취약한 분**\n"
+     "- **지원 내용**: 전기·도시가스·등유 등 **냉·난방 비용** 지원\n"
+     "- **신청 장소**: 가까운 **주민센터**(행정복지센터)\n"
+     "- **문의**: 가까운 주민센터",
      "에너지바우처는 누가 받을 수 있고 어떻게 신청하나요?"),
     ("2026-08-05", "치매안심센터 무료 조기검진 프로그램 운영",
+     "보건소 **치매안심센터**에서 **무료 조기검진·상담**을 운영합니다. 기억력이 "
+     "걱정되시면 편하게 검진받으실 수 있습니다.\n\n"
+     "- **대상**: 만 60세 이상 어르신 *(지역 기준은 센터 확인)*\n"
+     "- **내용**: 인지선별검사, 상담, 치매 어르신·가족 지원\n"
+     "- **비용**: **무료**\n"
+     "- **문의**: 가까운 **보건소 치매안심센터**",
      "치매 조기검진은 무료인가요? 어디서 받나요?"),
     ("2026-07-28", "노인맞춤돌봄서비스 신규 대상자 모집",
+     "혼자 지내시는 어르신께 **생활지원사가 방문·안부 확인**을 도와드리는 "
+     "노인맞춤돌봄서비스의 신규 대상자를 모집합니다.\n\n"
+     "- **대상**: 돌봄이 필요한 **독거·취약 어르신**\n"
+     "- **내용**: 안전·안부 확인, 생활교육, 가사·외출 동행 등\n"
+     "- **신청 장소**: 가까운 **주민센터**(행정복지센터)\n"
+     "- **문의**: 가까운 주민센터",
      "노인맞춤돌봄서비스 대상과 신청 방법을 알려주세요"),
 ]
 
@@ -540,6 +565,7 @@ def bottom_tab_bar(active="home"):
             kind = "primary" if tab == active else "secondary"
             if col.button(label, key=f"nav_{tab}", use_container_width=True, type=kind):
                 st.session_state["tab"] = tab
+                st.session_state.pop("notice", None)   # 탭 이동 시 공지 상세 닫기
                 st.rerun()
 
 
@@ -1056,6 +1082,42 @@ def _ask_href(q: str) -> str:
     return f"?u={quote(u)}&t={quote(t)}&ask={quote(q)}"
 
 
+def _notice_href(i: int) -> str:
+    """공지 상세 페이지 링크: ?u=&t=&notice=<번호> (로그인 유지)."""
+    from urllib.parse import quote
+    u = st.session_state.get("auth_user", "")
+    t = _user_token(u) if u else ""
+    return f"?u={quote(u)}&t={quote(t)}&notice={i}"
+
+
+def notice_detail(client, i: int):
+    """공지사항 상세 화면 — 제목·날짜·본문 + 목록으로/AI 상담 버튼(챗봇 아님)."""
+    if i < 0 or i >= len(NOTICES):
+        st.session_state.pop("notice", None)
+        st.rerun()
+        return
+    date, title, body, ask_q = NOTICES[i]
+    st.markdown('<div class="gov-wrap sec" id="notice-detail">', unsafe_allow_html=True)
+    if st.button("← 공지 목록으로", key="notice_back"):
+        st.session_state.pop("notice", None)
+        st.rerun()
+    st.markdown(
+        f'<div style="border-bottom:2px solid #e6ebf4;padding-bottom:12px;margin:6px 0 16px">'
+        f'<div style="font-size:1.5rem;font-weight:800;color:#0f2f6f;letter-spacing:-.02em">'
+        f'{title}</div>'
+        f'<div style="color:#8493ac;font-size:.92rem;margin-top:6px">📅 {date} · '
+        f'대전노인복지HUB 공지</div></div>', unsafe_allow_html=True)
+    st.markdown(body)
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("💬 이 내용 AI 도우미에게 물어보기", key="notice_ask",
+                 type="primary", use_container_width=True):
+        st.session_state["pending_q"] = ask_q
+        st.session_state["tab"] = "talk"
+        st.session_state.pop("notice", None)
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 def login_screen():
     """1단계 — 로그인(성함 기반, 프로토타입). 성공하면 auth_user 설정."""
     inject_css()
@@ -1565,10 +1627,10 @@ def popular_block():
 
 def notices_block():
     rows = ""
-    for i, (date, title, ask_q) in enumerate(NOTICES):
+    for i, (date, title, _body, _ask_q) in enumerate(NOTICES):
         new = '<span class="newtag">NEW</span>' if i == 0 else ""
-        # 공지를 누르면 관련 질문으로 AI 상담 탭에서 바로 안내(로그인 유지)
-        rows += (f'<a class="notice" href="{_ask_href(ask_q)}" target="_self">'
+        # 공지를 누르면 상세 내용 페이지로 이동(챗봇이 아니라 공지 상세)
+        rows += (f'<a class="notice" href="{_notice_href(i)}" target="_self">'
                  f'<span class="date">{date}</span>'
                  f'<span class="t">{title}{new}</span>'
                  f'<span class="go">자세히 ›</span></a>')
@@ -1846,6 +1908,17 @@ def main():
             st.session_state["pending_q"] = q.strip()   # 상담 탭에서 스트리밍으로 답변
             st.session_state["tab"] = "talk"   # 질문하면 상담 화면으로 전환
 
+    # 공지사항 상세 보기: ?notice=<번호> → 상세 화면(챗봇 아님)
+    if "notice" in st.query_params:
+        try:
+            st.session_state["notice"] = int(st.query_params["notice"])
+        except (TypeError, ValueError):
+            pass
+        try:
+            del st.query_params["notice"]
+        except Exception:
+            pass
+
     with st.sidebar:
         st.subheader("화면 설정")
         st.caption("글자 크기")
@@ -1905,7 +1978,10 @@ def main():
         tab = st.session_state.get("tab", "home")
         bottom_tab_bar(tab)      # 폰 하단 탭바(홈·맞춤복지·AI상담·서비스) — 블로킹 전에
 
-        if tab == "mywelfare":
+        if st.session_state.get("notice") is not None:
+            notice_detail(client, st.session_state["notice"])   # 공지 상세(챗봇 아님)
+            footer()
+        elif tab == "mywelfare":
             if _profile_has_info(st.session_state.get("profile", {})):
                 my_welfare_cards()   # 내 맞춤 복지(카드) — 프로필 기반 추천
             else:
