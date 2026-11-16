@@ -509,7 +509,7 @@ _ELDER_CSS = """
 <style>
   .stApp{background:#f7f5f0 !important}
   .sub, .sec .sub{color:#3d4655 !important}
-  .sec.alt{background:#efebe2 !important}
+  .sec.alt{background:transparent !important}   /* 서비스 영역 회색 사각 배경 제거 */
   .menu a, .menu span{color:#3d4655 !important}
   .util{font-size:1rem !important}
   /* 공지 */
