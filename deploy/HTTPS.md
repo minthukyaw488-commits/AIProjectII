@@ -19,7 +19,7 @@
 3. current ip 칸에 서버 IP(예: `16.208.136.61`) 입력 → **update ip**
 4. 확인(서버에서): `getent hosts aiproject2.duckdns.org` → 서버 IP 가 나오면 OK
 
-## 2. 서버: 80/443 을 다른 프로그램이 쓰는지 확인
+## 2. 서버: 80/443 을 다른 프로그램이 쓰는지 확인 (apache2 가 보이면 맨 아래 ★ 절로)
 ```bash
 sudo ss -tlnp | grep -E ':(80|443) '
 ```
@@ -60,3 +60,33 @@ sudo journalctl -u caddy -n 30 --no-pager
 | 502 Bad Gateway | 앱이 꺼짐 → `systemctl status welfarehub-8003` |
 | 화면이 계속 연결 중 | 브라우저 새로고침. 계속되면 Caddy 로그 확인 |
 | IP 가 바뀜 | DuckDNS 사이트에서 update ip (Elastic IP 권장) |
+
+---
+
+## ★ Apache 가 이미 80 을 쓰는 경우 (우리 서버 = 이 방법)
+`sudo ss -tlnp | grep -E ':(80|443) '` 에 **apache2** 가 보이면 Caddy 대신 **기존 Apache 를 그대로
+HTTPS 프록시로 쓴다.** 기존 사이트(000-default, `/var/www/html` 팀원 페이지)는 건드리지 않는다 —
+도메인(aiproject2.duckdns.org)으로 들어온 요청만 8003 으로 넘긴다.
+
+```bash
+cd ~/team/novem/ondevice_llm
+git pull origin main
+sudo a2enmod proxy proxy_http proxy_wstunnel rewrite headers ssl
+sudo cp deploy/apache-aiproject2.conf /etc/apache2/sites-available/aiproject2.conf
+sudo a2ensite aiproject2
+sudo apache2ctl configtest
+sudo systemctl reload apache2
+curl -sI http://aiproject2.duckdns.org | head -3
+```
+`Syntax OK`, 그리고 마지막 줄 결과가 `HTTP/1.1 200` 이면 http 프록시 성공.
+
+인증서(Let's Encrypt) 발급 + https 자동 설정:
+```bash
+sudo apt install -y certbot python3-certbot-apache
+sudo certbot --apache -d aiproject2.duckdns.org --redirect --agree-tos --register-unsafely-without-email -n
+curl -sI https://aiproject2.duckdns.org | head -3
+```
+`Congratulations` / `Successfully deployed certificate` 가 보이면 완료. 인증서는 certbot 이 자동 갱신한다.
+
+되돌리기: `sudo a2dissite aiproject2 aiproject2-le-ssl; sudo systemctl reload apache2`
+(기존 Apache 사이트는 영향 없음)
