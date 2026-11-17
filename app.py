@@ -928,9 +928,14 @@ def _gen_actions(user_q: str, answer: str):
     for term in ("치매안심센터", "행정복지센터", "주민센터", "보건소",
                  "노인복지관", "복지관", "국민연금공단"):
         if term in a:
+            # 외출 중에도 쓸 수 있게 두 가지: ① 지금 있는 곳 근처(카카오맵이 현재 위치로 검색)
+            # ② 우리 동네(프로필의 거주 구) — 복지 '신청'은 보통 주소지 기관에서 하므로
+            acts.append(("📍 지금 있는 곳 근처", "link",
+                         "https://map.kakao.com/link/search/" + _up.quote(term)))
             dist = (st.session_state.get("profile") or {}).get("district") or ""
-            qs = _up.quote(f"대전 {dist} {term}".replace("  ", " ").strip())
-            acts.append(("📍 가까운 " + term, "link", f"https://map.kakao.com/?q={qs}"))
+            if dist:
+                acts.append((f"🏠 우리 동네({dist})", "link",
+                             "https://map.kakao.com/link/search/" + _up.quote(f"대전 {dist} {term}")))
             break
     cat = _match_cat(user_q)
     if cat:
@@ -954,6 +959,9 @@ def _answer_actions(idx: int, user_q: str, answer: str):
             elif cols[j].button(label, key=f"act{idx}_{j}", use_container_width=True):
                 st.session_state["pending_q"] = payload
                 st.rerun()
+        if any(kind == "link" for _, kind, _ in acts):
+            st.caption("※ 서류 발급·상담은 가까운 곳 어디서나 가능해요. "
+                       "복지 **신청**은 주소지(우리 동네) 기관에서 하시는 것이 원칙이에요.")
 
 
 def _render_history(messages):
