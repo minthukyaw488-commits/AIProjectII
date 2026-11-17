@@ -863,6 +863,10 @@ def _answer_for(client, q: str, attach: str | None = None):
             st.error(r["error"])
             return None
         r["question"] = q
+        # 대상 연령이 아닌 복지를 물으면 답변 맨 앞에 안내(코드로 확정 — 모델이 빠뜨리지 않게)
+        from src.welfare_rules import age_notice
+        r["answer"] = age_notice(q, p.get("age"),
+                                 p.get("name") or st.session_state.get("auth_user", "")) + r.get("answer", "")
     try:
         from src import db
         u = st.session_state.get("auth_user")
@@ -1565,16 +1569,12 @@ _UPLOAD_TYPES = ["png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif",
                  "pdf", "txt", "md", "csv", "docx"]
 
 
-def _gemini_key() -> str:
-    import os
-    return os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
-
-
 def _read_upload(up):
     """업로드 파일 → (추출 텍스트, 오류메시지). 결과는 파일별로 캐시한다.
 
-    - 사진(이미지)이고 Gemini 키가 있으면 **vision 으로 '보고' 읽음**(글자+맥락).
-    - 그 외(PDF·txt, 또는 키 없음)는 **OCR/텍스트 추출**(on-device, 개인정보 안전).
+    - 사진: src/image_reader — Gemini vision(키 있을 때) → 서버 안 Ollama vision
+      (qwen2.5vl) → OCR 순으로 '보고' 읽어 쉬운 설명을 만든다.
+    - 문서(PDF·txt): OCR/텍스트 추출(on-device).
     추출된 내용은 질문의 근거(attach)로 쓰여 RAG 답변에 반영된다."""
     import os
     try:
@@ -1583,20 +1583,15 @@ def _read_upload(up):
             return st.session_state[key], None
         ext = os.path.splitext(up.name)[1].lower()
         from src.file_intake import IMAGE_EXTS
-        gkey = _gemini_key()
-        if ext in IMAGE_EXTS and gkey:
-            from src.llm import GeminiLLM
-            mime = ("image/png" if ext == ".png" else
-                    "image/webp" if ext == ".webp" else
-                    "image/gif" if ext == ".gif" else "image/jpeg")
-            prompt = ("이 사진을 한국어로 읽어 주세요. 글자가 있으면 그대로 옮기고, "
-                      "고지서·안내문·약 봉투라면 무엇에 대한 것인지와 핵심"
-                      "(금액·기관·기한·용법)을 간단히 정리해 주세요.")
-            with st.spinner("🖼 사진을 분석하는 중입니다(Gemini vision)…"):
-                text = GeminiLLM(api_key=gkey).generate_vision(prompt, up.getvalue(), mime)
+        if ext in IMAGE_EXTS:
+            # 사진: Gemini vision(키 있을 때) → 서버 안 Ollama vision → OCR 순 자동 전환
+            from src.image_reader import read_image
+            with st.spinner("🔎 사진을 자세히 살펴보고 있습니다…"):
+                text, engine = read_image(up.getvalue(), up.name)
+            st.session_state["vision_engine::" + key] = engine
         else:
             from src.file_intake import extract_text_from_upload
-            with st.spinner("🔎 사진·문서에서 글자를 읽는 중입니다…"):
+            with st.spinner("🔎 문서에서 글자를 읽는 중입니다…"):
                 text, _kind = extract_text_from_upload(up.name, up.getvalue())
         if not (text or "").strip():
             return None, ("사진에서 내용을 읽지 못했어요. 더 밝고 또렷하게, "
@@ -1620,10 +1615,8 @@ def chat_uploader():
             if err:
                 st.warning(err)
             elif attach_text:
-                st.success(f"✅ '{up.name}' 에서 글자를 읽었어요. "
-                           "질문을 입력하거나 아래 버튼을 눌러 주세요.")
-                with st.expander("읽은 내용 미리보기"):
-                    st.text(attach_text[:1500])
+                st.success(f"✅ '{up.name}' 분석이 끝났어요. 더 궁금한 점은 아래에 물어보세요.")
+                st.markdown(attach_text[:3000])          # 접지 않고 바로 설명을 보여 준다
                 ask_file = st.button("🔎 이 사진·문서를 설명해 주세요",
                                      use_container_width=True, type="primary")
     return attach_text, ask_file

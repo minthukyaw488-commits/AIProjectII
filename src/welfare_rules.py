@@ -217,3 +217,47 @@ def recommend(p: Profile, table: list[Welfare] | None = None):
     maybe = [r for r in res if r.status == "maybe"]
     not_elig = [r for r in res if r.status == "not"]
     return eligible, maybe, not_elig
+
+
+# ── 질문 + 나이 → '대상 연령 아님' 안내(결정적) ─────────────────────────────────
+# 시스템 프롬프트(_eligibility_note)로도 알려주지만 작은 모델은 이를 빠뜨리기도 한다.
+# 그래서 코드로 답변 맨 앞에 항상 붙인다. 긴 키워드부터 비교한다
+# (예: '노인복지관'(60세)이 '노인'으로 시작하는 다른 규칙에 먼저 걸리지 않도록).
+AGE_RULES: dict[str, tuple[str, int]] = {
+    # 만 65세 이상
+    "기초연금": ("기초연금", 65),
+    "노인일자리": ("노인일자리", 65),
+    "경로우대": ("경로우대 혜택", 65),
+    "지하철": ("경로우대 지하철 무임승차", 65),
+    "도시철도": ("경로우대 도시철도 무임승차", 65),
+    "무임승차": ("경로우대 무임승차", 65),
+    "경로당": ("경로당 이용", 65),
+    "노인맞춤돌봄": ("노인맞춤돌봄서비스", 65),
+    "맞춤돌봄": ("노인맞춤돌봄서비스", 65),
+    "장기요양": ("노인장기요양보험", 65),
+    "틀니": ("노인 틀니 지원", 65),
+    "임플란트": ("노인 임플란트 지원", 65),
+    # 만 60세 이상
+    "치매": ("치매 조기검진·지원", 60),
+    "인지선별": ("치매 조기검진(인지선별검사)", 60),
+    "노인복지관": ("노인복지관 이용", 60),
+}
+
+
+def age_notice(question: str, age, name: str = "") -> str:
+    """질문한 복지의 최소 연령보다 어리면 안내 문단을, 아니면 '' 를 돌려준다."""
+    try:
+        age_num = int(age)
+    except (TypeError, ValueError):
+        return ""
+    q = "".join((question or "").split())
+    for kw in sorted(AGE_RULES, key=len, reverse=True):
+        if kw in q:
+            label, min_age = AGE_RULES[kw]
+            if age_num >= min_age:
+                return ""
+            who = f"{name} 님은" if name else "등록하신 정보로는"
+            return (f"**안내: {who} 현재 만 {age_num}세로, 만 {min_age}세 이상이 대상인 "
+                    f"'{label}' 대상 연령이 아직 아니에요.** "
+                    "가족분을 대신해 알아보시는 경우를 위해 아래에 내용을 안내해 드려요.\n\n")
+    return ""
