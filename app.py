@@ -1120,10 +1120,12 @@ _TABS = ("home", "mywelfare", "talk", "services")
 
 
 def _nav_href(tab: str) -> str:
-    """상단 메뉴 링크 주소: ?u=<성함>&tab=<탭>. _ask_href 와 같은 방식으로 로그인 유지."""
+    """상단 메뉴 링크 주소: ?u=<성함>&t=<서명토큰>&tab=<탭>.
+    _ask_href 와 같은 방식(서명 토큰 포함)이라 눌러도 로그인이 유지된다."""
     from urllib.parse import quote
     u = st.session_state.get("auth_user", "")
-    return f"?u={quote(u)}&tab={quote(tab)}"
+    t = _user_token(u) if u else ""
+    return f"?u={quote(u)}&t={quote(t)}&tab={quote(tab)}"
 
 
 def _ask_href(q: str) -> str:
