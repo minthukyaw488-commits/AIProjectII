@@ -1138,6 +1138,21 @@ def _set_login_params(name: str):
     st.query_params["t"] = _user_token(name)
 
 
+@st.dialog("로그아웃 확인")
+def _confirm_logout():
+    """잘못 눌러 바로 로그아웃되지 않도록 한 번 더 묻는다.
+    (성함·비밀번호를 기억하지 못하는 어르신이 다시 못 들어오는 일을 막기 위함)"""
+    st.markdown('<div style="font-size:1.12rem;line-height:1.7">정말 <b>로그아웃</b> 하시겠어요?'
+                '<br>다시 들어오실 때 <b>성함과 비밀번호</b>가 필요합니다.</div>',
+                unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    if c1.button("아니요, 계속 이용", type="primary", use_container_width=True,
+                 key="logout_no"):
+        st.rerun()                       # 창 닫기
+    if c2.button("네, 로그아웃", use_container_width=True, key="logout_yes"):
+        _logout()
+
+
 def _logout():
     """로그아웃 → 로그인 화면으로. 세션·URL(?u=,?t=) 모두 비워 새 계정으로 로그인 가능."""
     for k in ("auth_user", "profile", "profile_done", "chat", "pending_q"):
@@ -1369,21 +1384,20 @@ def my_welfare_cards():
 # --------------------------------------------------------------------------
 def header_nav(client):
     st.markdown(
+        # 상단 띠: 하단 탭(홈·맞춤복지·AI상담·서비스)과 겹치던 링크를 빼고 안내만 표시
         '<div class="util"><div class="gov-wrap">'
-        f'<a href="{_nav_href("home")}" target="_self">홈</a>'
-        f'<a href="{_nav_href("mywelfare")}" target="_self">내 맞춤복지</a>'
-        f'<a href="{_nav_href("services")}" target="_self">전체 서비스</a>'
-        f'<a href="{_nav_href("talk")}" target="_self">AI 상담</a>'
-        '</div></div>', unsafe_allow_html=True)
+        '<span>대전광역시 어르신 복지 AI 안내</span>'
+        '<span>궁금한 점은 복지상담 ☎ 129</span>'
+        '</div></div>' + _HEADER_TIDY_CSS, unsafe_allow_html=True)
     st.markdown('<div class="gov-wrap" style="padding-top:14px;padding-bottom:6px">',
                 unsafe_allow_html=True)
-    b, s, n = st.columns([1.55, 2.05, 2.2], vertical_alignment="center")
+    b, s, n = st.columns([1.5, 2.1, 2.1], vertical_alignment="center")
     seal = ('<span class="seal"><svg class="brand-svg" viewBox="0 0 24 24" fill="none" '
             'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
             'stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/>'
             '<path d="M9 21v-5h6v5"/></svg></span>')
     b.markdown(f'<div class="brand">{seal} 대전노인복지HUB</div>', unsafe_allow_html=True)
-    with s:
+    with s, st.container(key="hdrsearch"):
         with st.form("hdr_search", clear_on_submit=True):
             sc1, sc2 = st.columns([3, 1])
             q = sc1.text_input("검색", placeholder="복지 서비스 검색",
@@ -1394,22 +1408,48 @@ def header_nav(client):
             st.session_state["tab"] = "talk"
             st.rerun()
     with n:
+        # 메뉴: 하단 탭과 겹치는 '복지서비스'(=서비스)·'상담·문의'(=AI상담)는 빼고
+        # 하단 탭에 없는 바로가기만 둔다.
         st.markdown(
             '<div class="menu">'
-            f'<a href="{_nav_href("services")}" target="_self">복지서비스</a>'
             f'<a href="{_ask_href("어르신 건강·의료 지원 서비스를 알려주세요")}" target="_self">건강·의료</a>'
             f'<a href="{_ask_href("노인맞춤돌봄서비스가 뭐예요?")}" target="_self">어르신 돌봄</a>'
             f'<a href="{_nav_href("home")}#notices" target="_self">공지사항</a>'
-            f'<a href="{_nav_href("talk")}" target="_self">상담·문의</a>'
             '</div>', unsafe_allow_html=True)
         uu = st.session_state.get("auth_user", "")
-        hc1, hc2 = st.columns([1.4, 1], vertical_alignment="center")
+        hc1, hc2 = st.container(key="hdruser").columns([1.4, 1], vertical_alignment="center")
         hc1.markdown(f'<div style="text-align:right;color:#5c6b86;font-size:.9rem;'
                      f'font-weight:700">👤 {uu} 님</div>', unsafe_allow_html=True)
         if hc2.button("로그아웃", key="hdr_logout", use_container_width=True,
                       help="로그인 화면으로 돌아가 다른 계정으로 로그인합니다."):
-            _logout()
+            _confirm_logout()            # 바로 나가지 않고 한 번 더 확인
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+# 머리글 정리: 로고·검색·로그아웃 글자가 좁은 화면에서 '검'·'로그…'처럼 잘리거나
+# 로고가 두 줄로 꺾이지 않게 한 줄 유지.
+_HEADER_TIDY_CSS = """
+<style>
+  .brand{white-space:nowrap}
+  .util .gov-wrap{justify-content:space-between !important}
+  .util span{opacity:.9}
+  [data-testid="stForm"] button p, .st-key-hdr_logout button p{white-space:nowrap}
+  .st-key-hdr_logout button{min-width:88px}
+  .menu{justify-content:flex-end; flex-wrap:nowrap}
+  /* 폰: 검색창+검색 버튼, 이름+로그아웃을 각각 한 줄로(세로로 쌓여 화면 절반을 차지하던 것) */
+  @media(max-width:640px){
+    .st-key-hdrsearch [data-testid="stHorizontalBlock"],
+    .st-key-hdruser[data-testid="stHorizontalBlock"], .st-key-hdruser [data-testid="stHorizontalBlock"]{
+      flex-wrap:nowrap !important; gap:8px !important; align-items:center}
+    .st-key-hdrsearch [data-testid="stColumn"], .st-key-hdruser [data-testid="stColumn"]{
+      min-width:0 !important; width:auto !important}
+    .st-key-hdrsearch [data-testid="stColumn"]:first-child,
+    .st-key-hdruser [data-testid="stColumn"]:first-child{flex:1 1 auto !important}
+    .st-key-hdrsearch [data-testid="stColumn"]:last-child,
+    .st-key-hdruser [data-testid="stColumn"]:last-child{flex:0 0 96px !important}
+  }
+</style>
+"""
 
 
 def voice_orb(client):
@@ -2099,7 +2139,7 @@ def main():
         if st.button("내 정보 수정", use_container_width=True):
             st.session_state["profile_done"] = False; st.rerun()
         if st.button("로그아웃", use_container_width=True):
-            _logout()
+            _confirm_logout()            # 바로 나가지 않고 한 번 더 확인
 
     inject_css()
     inject_pwa()
