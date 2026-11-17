@@ -481,6 +481,8 @@ def inject_css():
     </style>
     """, unsafe_allow_html=True)
     st.markdown(_PAGE_MARGIN_CSS, unsafe_allow_html=True)
+    if not hc:                     # 고대비 모드는 자체 흑백 팔레트를 그대로 사용
+        st.markdown(_ELDER_CSS, unsafe_allow_html=True)
 
 
 # 페이지 좌우 여백(표준 폭) — 화면 끝에 붙던 입력창·버튼·채팅에 여백을 준다.
@@ -498,6 +500,57 @@ _PAGE_MARGIN_CSS = f"""
   /* 상단 메뉴 글자가 '복/지/서/비/스'처럼 한 글자씩 세로로 끊기지 않게 */
   .menu{{flex-wrap:wrap; row-gap:4px}}
   .menu > *{{white-space:nowrap; padding-left:11px !important; padding-right:11px !important}}
+</style>
+"""
+
+# 어르신 눈에 편한 색 — 노안·수정체 황변을 고려해 대비 7:1 이상(WCAG AAA),
+# 눈부심이 적은 따뜻한 미색 바탕, 색이 아닌 아이콘·글자로 구분. CSS 만 덧붙인다.
+_ELDER_CSS = """
+<style>
+  .stApp{background:#f7f5f0 !important}
+  .sub, .sec .sub{color:#3d4655 !important}
+  .sec.alt{background:transparent !important}   /* 서비스 영역 회색 사각 배경 제거 */
+  .menu a, .menu span{color:#3d4655 !important}
+  .util{font-size:1rem !important}
+  /* 공지 */
+  .notice .date{color:#4a5363 !important; font-weight:600}
+  .notice .t{font-size:1.05rem}
+  .newtag{background:#9b1c13 !important; font-size:.8rem !important}
+  /* 서비스·맞춤복지 카드: 흰 카드 + 진한 글자 + 왼쪽 색 띠(색은 보조 표시) */
+  .cat-card{background:#ffffff !important; background-image:none !important;
+    color:#1c2430 !important; border:2px solid #d9d4c7 !important;
+    border-left:10px solid var(--c) !important; box-shadow:0 2px 8px rgba(0,0,0,.06) !important;
+    animation:none !important}
+  .cat-card:hover{transform:none !important; border-color:#1e3a8a !important;
+    border-left-color:var(--c) !important; box-shadow:0 4px 14px rgba(0,0,0,.10) !important}
+  .cat-card, .cat-card *{text-decoration:none !important}
+  .cat-name{color:#1c2430 !important}
+  .cat-desc{color:#3d4655 !important; opacity:1 !important}
+  .cat-ic{background:var(--c) !important}
+  .cat-ic svg{color:#ffffff !important}
+  .cat-card .arw{color:#1e3a8a !important; opacity:1 !important}
+  /* 버튼: 그라데이션 대신 단색 진남색 */
+  .stApp .stButton button[kind="primary"],
+  .stApp div[data-testid="stForm"] button[kind="primaryFormSubmit"],
+  .stApp div[data-testid="stForm"] button[kind="secondaryFormSubmit"]{
+    background:#1e3a8a !important; background-image:none !important;
+    border:2px solid #1e3a8a !important; color:#ffffff !important; box-shadow:none !important}
+  .stApp div[data-testid="stButton"] > button[kind="secondary"]{
+    border:2px solid #b9b3a4 !important; color:#1c2430 !important}
+  /* 입력창 테두리를 또렷하게 */
+  [data-baseweb="input"]{border:2px solid #8a8476 !important}
+  /* 질문 칩 */
+  .chip{border:2px solid #1e3a8a !important; color:#1e3a8a !important; font-weight:700}
+  /* 말풍선 */
+  .bub.user{background:#1e3a8a !important; background-image:none !important}
+  .bub.bot{border:2px solid #d9d4c7 !important}
+  .bub.bot::before{font-size:.85rem !important; color:#1e3a8a !important}
+  /* 하단 탭: 선택 안 된 탭 글자도 잘 보이게 */
+  .stApp .st-key-htnav div[data-testid="stButton"] > button[kind]{border:0 !important;
+    background:transparent !important; box-shadow:none !important}
+  .stApp .st-key-htnav div[data-testid="stButton"] > button[kind="secondary"]{color:#3d4655 !important}
+  .stApp .st-key-htnav div[data-testid="stButton"] > button[kind="primary"]{color:#1e3a8a !important;
+    font-weight:800 !important}
 </style>
 """
 
