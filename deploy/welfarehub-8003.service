@@ -1,0 +1,33 @@
+# systemd 유닛 — 어르신용 Streamlit 앱(app.py)을 서버에서 '항상' 켜 둔다.
+#   · SSH 를 닫아도 계속 실행
+#   · 앱이 죽으면 5초 뒤 자동 재시작
+#   · 서버(인스턴스)를 재부팅해도 자동 시작
+# 설치 방법은 deploy/DEPLOY_STREAMLIT.md 의 "systemd 로 상시 실행" 절을 따른다.
+#
+# 비밀값(GEMINI_API_KEY 등)은 이 파일에 적지 않는다(저장소에 커밋됨).
+# 필요하면 서버에만 /etc/welfarehub.env (권한 600) 를 만들어 넣는다 — 없어도 동작.
+
+[Unit]
+Description=Daejeon Welfare HUB - Streamlit app (app.py, port 8003)
+# 상담 답변·사진 이해가 Ollama 를 쓰므로 Ollama 뒤에 기동
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/team/novem/ondevice_llm
+Environment=LLM_BACKEND=ollama
+Environment=LLM_MODEL=exaone3.5:2.4b
+Environment=OLLAMA_HOST=http://localhost:11434
+Environment=PYTHONUNBUFFERED=1
+# 선택: GEMINI_API_KEY=... 를 서버에만 둔다(앞의 '-' = 파일이 없어도 오류 아님)
+EnvironmentFile=-/etc/welfarehub.env
+ExecStart=/usr/bin/python3 -m streamlit run app.py \
+    --server.port 8003 --server.address 0.0.0.0 --server.headless true \
+    --server.enableCORS false --server.enableXsrfProtection false
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
