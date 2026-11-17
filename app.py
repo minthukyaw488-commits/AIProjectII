@@ -297,7 +297,7 @@ def inject_css():
         transition:background .15s}}
       .notice:hover{{background:{surface2}}}
       a.notice{{text-decoration:none !important; cursor:pointer; color:inherit}}
-      a.notice .go{{margin-left:auto; color:#2f6bff; font-size:.9rem; font-weight:700;
+      a.notice .go{{margin-left:auto; color:#2f6bff; font-size:1.6rem; font-weight:700; line-height:1;
         white-space:nowrap}}
       .notice .date{{color:#8493ac; font-variant-numeric:tabular-nums; min-width:104px;
         font-size:.95rem}}
@@ -1570,7 +1570,6 @@ def hero_banner(subtitle: str | None = None):
     st.markdown(f"""
     <div class="hero" id="home"><div class="gov-wrap"><div class="hero-inner">
       {art}
-      <span class="eyebrow">대전광역시 · 어르신 복지</span>
       <h1>어르신, 무엇을 도와드릴까요?</h1>
       <p>{sub}</p>
     </div></div></div>
@@ -1581,18 +1580,28 @@ def home_screen(client):
     """홈 탭 — 환영 배너 + 빠른 질문(누르면 상담 탭에서 바로 답변) + 공지."""
     from urllib.parse import quote
     user = st.session_state.get("auth_user", "어르신")
-    hero_banner(f"{user} 님, 궁금한 복지를 아래에서 바로 물어보세요. 모든 상담은 안전하게 보호됩니다.")
+    hero_banner(f"{user} 님, 궁금한 것을 아래에서 눌러 보세요.")
     st.markdown('<div class="gov-wrap sec" id="homebody">', unsafe_allow_html=True)
-    st.markdown('<h2>무엇이든 물어보세요</h2>'
-                '<p class="sub">아래 질문을 누르면 ‘AI상담’에서 바로 답해 드려요. '
-                '직접 입력하시려면 아래 탭의 💬 AI상담을 눌러 주세요.</p>',
-                unsafe_allow_html=True)
-    quicks = ["기초연금 신청 방법 알려줘", "노인맞춤돌봄서비스가 뭐예요?",
-              "치매안심센터는 어디서 이용하나요?", "무릎이 아픈데 도움받을 곳이 있나요?",
-              "경로당·노인복지관 알려줘", "방문 건강관리 신청하고 싶어요"]
+    st.markdown('<h2>자주 묻는 질문</h2>'
+                '<p class="sub">누르시면 바로 답해 드려요.</p>', unsafe_allow_html=True)
+    # (버튼에 보이는 짧은 이름, 누르면 AI상담에 보내는 질문) — 읽기 쉽게 짧은 이름만 보여 준다
+    quicks = [("기초연금 신청", "기초연금 신청 방법 알려줘"),
+              ("노인맞춤돌봄", "노인맞춤돌봄서비스가 뭐예요?"),
+              ("치매안심센터", "치매안심센터는 어디서 이용하나요?"),
+              ("무릎·관절 도움", "무릎이 아픈데 도움받을 곳이 있나요?"),
+              ("경로당·복지관", "경로당·노인복지관 알려줘"),
+              ("방문 건강관리", "방문 건강관리 신청하고 싶어요")]
     chips = "".join(
-        f'<a class="chip" href="{_ask_href(q)}" target="_self">{q}</a>' for q in quicks)
+        f'<a class="chip" href="{_ask_href(q)}" target="_self">{label}</a>'
+        for label, q in quicks)
     st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
+    # 원하는 질문이 없을 때: 직접 물어볼 곳을 크게 안내(어르신이 다음 행동을 바로 알 수 있게)
+    st.markdown(f'<a class="ask-own" href="{_nav_href("talk")}" target="_self">'
+                '💬 다른 질문은 <b>여기를 눌러</b> 직접 물어보세요 ›</a>'
+                '<style>a.ask-own{display:block; margin:18px 0 4px; padding:16px 18px;'
+                'border-radius:16px; background:#1e3a8a; color:#fff !important;'
+                'font-size:1.1rem; text-align:center; text-decoration:none !important}'
+                'a.ask-own b{color:#fff}</style>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     notices_block()
 
@@ -1795,9 +1804,9 @@ def notices_block():
         rows += (f'<a class="notice" href="{_notice_href(i)}" target="_self">'
                  f'<span class="date">{date}</span>'
                  f'<span class="t">{title}{new}</span>'
-                 f'<span class="go">자세히 ›</span></a>')
+                 f'<span class="go" aria-label="자세히">›</span></a>')
     st.markdown('<div class="sec" id="notices"><div class="gov-wrap">'
-                '<h2>공지사항</h2><p class="sub">복지 관련 최신 소식입니다.</p>'
+                '<h2>공지사항</h2>'
                 f'{rows}</div></div>', unsafe_allow_html=True)
 
 
