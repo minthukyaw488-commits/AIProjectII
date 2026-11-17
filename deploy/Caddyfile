@@ -1,0 +1,9 @@
+# Caddy — HTTPS 리버스 프록시 (Let's Encrypt 인증서 자동 발급·자동 갱신)
+#   https://<도메인>  →  Streamlit(localhost:8003)
+# 사용법: deploy/HTTPS.md 참고. 아래 도메인을 본인이 만든 DuckDNS 주소로 바꾼다.
+# Streamlit 의 웹소켓(/_stcore/stream)도 Caddy 가 자동으로 전달한다.
+
+djwelfare.duckdns.org {
+	encode gzip
+	reverse_proxy localhost:8003
+}
