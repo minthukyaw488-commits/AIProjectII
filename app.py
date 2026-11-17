@@ -1388,7 +1388,7 @@ def header_nav(client):
         '<div class="util"><div class="gov-wrap">'
         '<span>대전광역시 어르신 복지 AI 안내</span>'
         '<span>궁금한 점은 복지상담 ☎ 129</span>'
-        '</div></div>' + _HEADER_TIDY_CSS, unsafe_allow_html=True)
+        '</div></div>' + _HEADER_TIDY_CSS + _SIDEBAR_OPEN_CSS, unsafe_allow_html=True)
     st.markdown('<div class="gov-wrap" style="padding-top:14px;padding-bottom:6px">',
                 unsafe_allow_html=True)
     b, s, n = st.columns([1.5, 2.1, 2.1], vertical_alignment="center")
@@ -1418,13 +1418,35 @@ def header_nav(client):
             '</div>', unsafe_allow_html=True)
         uu = st.session_state.get("auth_user", "")
         hc1, hc2 = st.container(key="hdruser").columns([1.4, 1], vertical_alignment="center")
-        hc1.markdown(f'<div style="text-align:right;color:#5c6b86;font-size:.9rem;'
-                     f'font-weight:700">👤 {uu} 님</div>', unsafe_allow_html=True)
+        # 이름을 '내 정보' 버튼으로 — 사이드바(폰에선 닫혀 있음) 안에만 있던
+        # '내 정보 수정'을 화면에서 바로 찾을 수 있게
+        if hc1.button(f"👤 {uu} 님 · 내 정보", key="hdr_profile", use_container_width=True,
+                      help="나이·거주 구 등 내 정보를 확인하고 고칩니다."):
+            st.session_state["profile_done"] = False
+            st.rerun()
         if hc2.button("로그아웃", key="hdr_logout", use_container_width=True,
                       help="로그인 화면으로 돌아가 다른 계정으로 로그인합니다."):
             _confirm_logout()            # 바로 나가지 않고 한 번 더 확인
     st.markdown('</div>', unsafe_allow_html=True)
 
+
+# 숨겨진 머리글(stHeader) 때문에 사이드바를 한 번 닫으면 다시 열 수 없던 문제:
+# 열기 버튼만 왼쪽 위에 보이게 해 글자 크기·고대비 등 설정에 다시 들어갈 수 있게 한다.
+_SIDEBAR_OPEN_CSS = """
+<style>
+  [data-testid="stExpandSidebarButton"], [data-testid="stSidebarCollapsedControl"]{
+    visibility:visible !important; position:fixed !important; top:10px; left:10px;
+    z-index:10000; background:#ffffff; border:2px solid #1e3a8a; border-radius:12px;
+    padding:2px 4px; box-shadow:0 4px 12px rgba(16,35,61,.18)}
+  [data-testid="stExpandSidebarButton"] *, [data-testid="stSidebarCollapsedControl"] *{
+    visibility:visible !important; color:#1e3a8a !important}
+  /* 아이콘(»)만으로는 뜻을 알기 어려워 '글자 크기·설정' 글자를 붙인다 */
+  [data-testid="stExpandSidebarButton"]::after{content:"글자 크기·설정"; margin-left:4px;
+    font-size:15px; font-weight:700; color:#1e3a8a; white-space:nowrap}
+  [data-testid="stExpandSidebarButton"]{width:auto !important; display:flex !important;
+    align-items:center; padding:4px 10px 4px 6px !important}
+</style>
+"""
 
 # 머리글 정리: 로고·검색·로그아웃 글자가 좁은 화면에서 '검'·'로그…'처럼 잘리거나
 # 로고가 두 줄로 꺾이지 않게 한 줄 유지.
