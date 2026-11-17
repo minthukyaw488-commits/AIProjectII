@@ -26,8 +26,10 @@ from typing import List, Optional
 from . import config
 from .abnormal_signal import AbnormalSignalDetector, SignalResult
 from .alerts import AlertDispatcher
+from .crisis import CRISIS_REPLY, is_crisis
 from .llm import (ANSWER_SYSTEM_PROMPT, OFF_DOMAIN_REPLY, SMALLTALK_SYSTEM_PROMPT,
-                  build_answer_prompt, build_personal_system, clean_answer, make_llm)
+                  build_answer_prompt, build_personal_system, clean_answer, ground_answer,
+                  make_llm)
 from .rag_pipeline import RagPipeline, cite_label
 from .router import is_smalltalk, is_off_domain
 
@@ -85,6 +87,11 @@ class WelfareAssistant:
         # Layer 2 (abnormal signal) runs on every utterance, incl. small talk.
         signal = self.detector.add_utterance(question)
 
+        # 0) 위기(자살·자해) 표현 → 문서 검색·LLM 생성 없이 고정 '도움 연결' 안내.
+        #    (일반 복지 답변이 나가면 안 됨 — 예: "제가 죽어도 되나요?")
+        if is_crisis(question):
+            return TurnResult(question, CRISIS_REPLY, [], signal, self._maybe_alert(signal))
+
         # 1) Greetings / small talk -> warm chatbot reply, no RAG, no refusal.
         if is_smalltalk(question):
             answer = self._smalltalk_reply(question)
@@ -122,7 +129,7 @@ class WelfareAssistant:
         # 답변이 중간에 끊기지 않도록 생성 토큰 여유를 둔다(기본 130 → 256).
         answer = self.llm.generate(prompt, system=self.answer_system,
                                    num_predict=256)
-        return clean_answer(answer), [cite_label(r) for r in retrieved]
+        return ground_answer(clean_answer(answer), contexts), [cite_label(r) for r in retrieved]
 
     def _smalltalk_reply(self, question: str) -> str:
         """Warm, human reply to a greeting. Uses the LLM with a friendly persona;

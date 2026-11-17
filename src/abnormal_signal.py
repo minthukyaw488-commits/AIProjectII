@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from . import config
+from .crisis import is_crisis
 
 
 # Risk levels, lowest to highest, so two assessments can be combined by severity.
@@ -264,7 +265,9 @@ class AbnormalSignalDetector:
             if c >= self.repeat_threshold:
                 reasons.append(f"'{g}' 관련 호소 {c}회 반복 (기준 {self.repeat_threshold})")
 
-        crisis = any(kw in " ".join(self.history) for kw in config.CRISIS_KEYWORDS)
+        # 위기 표현: 공용 기준(src/crisis.py, 띄어쓰기 무시) + 기존 설정 키워드.
+        crisis = any(is_crisis(h) or any(kw in h for kw in config.CRISIS_KEYWORDS)
+                     for h in self.history)
         if crisis:
             reasons.append("위기 신호 키워드 감지 (즉시 확인 필요)")
 

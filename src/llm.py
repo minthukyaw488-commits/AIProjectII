@@ -70,7 +70,10 @@ ANSWER_SYSTEM_PROMPT = (
     "6) 어려운 제도 이름은 어르신이 한눈에 알 수 있도록 쉬운 말로 풀어 줍니다. "
     "예: '에너지바우처'는 '냉·난방비 지원', '장기요양보험'은 '요양 돌봄 지원'처럼 "
     "쉬운 설명을 함께 적습니다.\n"
-    "예시)\n"
+    "7) 전화번호·주소·기관 이름은 참고 자료에 그대로 적힌 것만 씁니다. 자료에 없으면 "
+    "지어내지 말고 '가까운 주민센터(행정복지센터)'로 안내합니다. '예시'라는 말이나 "
+    "괄호 속 설명 표시를 답변에 쓰지 않습니다.\n"
+    "[답변 모양 참고 — 아래 내용은 모양만 참고하고 그대로 옮기지 않습니다]\n"
     "질문: 기초연금은 어떻게 신청하나요?\n"
     "답변:\n"
     "- **대상**: 만 65세 이상 어르신\n"
@@ -168,6 +171,42 @@ def clean_answer(text: str) -> str:
     t = _re.sub(r"[ \t]{2,}", " ", t)       # 중복 공백
     t = _re.sub(r"\s+([.,)])", r"\1", t)    # 구두점 앞 공백
     return t.strip()
+
+
+# 전화번호(지역번호형 02-123-4567 / 대표번호형 1577-0199). 109·119·129 같은 3자리
+# 긴급·상담 번호는 이 패턴에 걸리지 않으므로 항상 유지된다.
+_PHONE_RE = _re.compile(r"(?<!\d)(?:0\d{1,2}[-.)\s]?\d{3,4}[-.\s]?\d{4}|1[5-9]\d{2}[-.\s]?\d{4})(?!\d)")
+_EXAMPLE_RE = _re.compile(r"\(\s*예시\s*\)|예시\s*[)）:：]\s*|\[\s*예시\s*\]")
+PHONE_FALLBACK_LINE = "- 정확한 연락처는 **가까운 주민센터(행정복지센터)** 또는 **보건복지상담센터 129**에 확인해 주세요."
+
+
+def _digits(s: str) -> str:
+    return _re.sub(r"\D", "", s)
+
+
+def ground_answer(text: str, contexts) -> str:
+    """답변을 검색 근거(contexts)에 맞춰 결정적으로 정리한다(생성 후 처리).
+
+    ① 프롬프트의 형식 안내를 모델이 그대로 옮긴 '(예시)'·'예시)' 표기를 지운다.
+    ② 참고 자료에 없는 전화번호가 들어간 줄은 통째로 지운다(작은 모델이 그럴듯한
+       번호를 지어내는 환각 — 어르신이 잘못된 곳에 전화하면 안 됨). 지운 줄이 있으면
+       주민센터·129 확인 안내 한 줄을 덧붙인다.
+    """
+    if not text:
+        return text
+    t = _EXAMPLE_RE.sub("", text)
+    allowed = {_digits(m) for c in (contexts or []) for m in _PHONE_RE.findall(c or "")}
+    kept, dropped = [], False
+    for line in t.split("\n"):
+        nums = _PHONE_RE.findall(line)
+        if nums and any(_digits(n) not in allowed for n in nums):
+            dropped = True
+            continue
+        kept.append(line.rstrip())
+    out = "\n".join(kept).strip()
+    if dropped and PHONE_FALLBACK_LINE not in out:
+        out = (out + "\n" + PHONE_FALLBACK_LINE).strip()
+    return out
 
 
 # Warm, chatbot-like replies for greetings / small talk (no RAG, no refusal).

@@ -15,6 +15,7 @@ import streamlit as st
 from src import config
 from src.tts import TextToSpeech
 from src.worker import AssistantClient
+from src.crisis import CRISIS_PATTERNS, CRISIS_REPLY, is_crisis
 
 st.set_page_config(page_title="대전노인복지HUB", layout="wide",
                    initial_sidebar_state="expanded")
@@ -483,6 +484,25 @@ def inject_css():
     st.markdown(_PAGE_MARGIN_CSS, unsafe_allow_html=True)
     if not hc:                     # 고대비 모드는 자체 흑백 팔레트를 그대로 사용
         st.markdown(_ELDER_CSS, unsafe_allow_html=True)
+    st.markdown(_PHONE_TEXT_CSS, unsafe_allow_html=True)   # 폰: 버튼·하단 탭 글씨 16px 이상
+
+
+# 폰(640px 이하)에서 버튼·하단 탭·접기 메뉴 글씨가 14.9px 등 16px 보다 작아지던 문제.
+# 어르신 가독성 기준(최소 16px)으로 올린다. 1rem = 기본 글자 크기(가/가+/가++ 반영).
+_PHONE_TEXT_CSS = """
+<style>
+  @media(max-width:640px){
+    .stApp div[data-testid="stButton"] > button,
+    .stApp div[data-testid="stButton"] > button p,
+    .stApp div[data-testid="stFormSubmitButton"] > button,
+    .stApp div[data-testid="stFormSubmitButton"] > button p,
+    .stApp [data-testid="stExpander"] summary p{font-size:max(16px, 1rem) !important}
+    .stApp .st-key-htnav div[data-testid="stButton"] > button,
+    .stApp .st-key-htnav div[data-testid="stButton"] > button p{
+      font-size:16px !important; letter-spacing:-.04em}
+  }
+</style>
+"""
 
 
 # 페이지 좌우 여백(표준 폭) — 화면 끝에 붙던 입력창·버튼·채팅에 여백을 준다.
@@ -685,7 +705,8 @@ def _chat_html(messages, limit: int = 8) -> str:
 # 통증·우울·고립 표현(주의) / 자살·자해 암시(위기)
 _CONCERN = ("아파", "아프", "불편", "도와줘", "도와주", "힘들", "외로", "우울",
             "슬프", "괴로", "못살", "숨이", "어지럽", "쓰러", "기운이없")
-_CRISIS = ("죽고싶", "죽어", "자살", "살기싫", "사라지고싶", "끝내고싶")
+# 위기 표현은 앱·파이프라인·이상신호가 같은 기준을 쓴다(src/crisis.py, 띄어쓰기 무시).
+_CRISIS = CRISIS_PATTERNS
 
 
 def _concern_banner():
@@ -813,7 +834,12 @@ def _source_caption(sources) -> str:
 def _answer_for(client, q: str, attach: str | None = None):
     """질문 → 결과 dict. 인사/프로필/오류/저장·알림 처리(채팅 append 는 호출부에서).
     attach: 업로드한 사진·문서에서 읽은 글자(있으면 답변 근거로 함께 전달). 실패 시 None."""
-    if not attach and q.replace(" ", "").rstrip("!?.~ ") in _GREETINGS:
+    if is_crisis(q):
+        # 위기(자살·자해) 표현 → 검색·LLM 없이 즉시 고정 '도움 연결' 안내(109·119·129).
+        # 이상신호 기록·관리자 알림은 호출부의 _record_signal 이 '위기'로 남긴다.
+        r = {"question": q, "sources": [], "answer": CRISIS_REPLY, "crisis": True,
+             "alert": f"위기 표현 감지 — 즉시 확인 필요: {q}"}
+    elif not attach and q.replace(" ", "").rstrip("!?.~ ") in _GREETINGS:
         u = st.session_state.get("auth_user", "어르신")
         r = {"question": q, "sources": [],
              "answer": f"안녕하세요, {u} 님 😊 궁금하신 복지를 편하게 물어보세요."}
@@ -1742,18 +1768,31 @@ def notices_block():
                 f'{rows}</div></div>', unsafe_allow_html=True)
 
 
+def _sync_state(widget_key: str, state_key: str):
+    """토글 위젯 값 → 앱 상태 키로 복사(on_change 콜백: rerun 전에 실행됨)."""
+    st.session_state[state_key] = st.session_state[widget_key]
+
+
 def footer():
-    st.markdown("""
+    # 시연용 학생 프로젝트임을 분명히 하고(가짜 주소·전화번호 금지), 도움 전화는 실제 번호만.
+    # 개인정보 문구는 '실제 설정'대로 표시한다(클라우드 답변·사진 이해를 켜면 외부 전송됨).
+    import os
+    external = (config.LLM_BACKEND != "ollama") or bool(os.environ.get("GEMINI_API_KEY"))
+    privacy = ("답변 생성(또는 사진 이해)을 위해 질문 내용이 외부 AI 서비스로 전송될 수 있습니다. "
+               "주민번호·계좌번호 같은 민감한 정보는 입력하지 마세요."
+               if external else
+               "질문과 답변은 이 서버 안의 AI 모델로 처리하며 외부 AI 서비스로 보내지 않습니다.")
+    st.markdown(f"""
     <div class="foot"><div class="gov-wrap">
       <div class="cols">
-        <div><b>대전노인복지HUB</b>대전광역시 서구 둔산로 100<br>
-             노인복지과 042-000-0000</div>
+        <div><b>대전노인복지HUB</b>학생 프로젝트 시연 서비스<br>
+             (대전광역시 공식 서비스가 아닙니다)</div>
         <div><b>바로가기</b>기초연금 · 노인맞춤돌봄<br>치매안심센터 · 방문건강관리</div>
-        <div><b>상담전화</b>복지상담 129<br>자살예방상담 109 (24시간)</div>
-        <div><b>이용안내</b>개인정보처리방침<br>웹 접근성 안내 · 이용약관</div>
+        <div><b>도움이 필요할 때</b>보건복지상담센터 129<br>자살예방 상담전화 109 · 응급 119 (24시간)</div>
+        <div><b>자료 출처</b>보건복지부 · 대전광역시 공개 자료<br>정확한 내용은 주민센터에서 확인하세요</div>
       </div>
-      <div class="copy">본 서비스는 모든 처리를 기기 내에서 수행하며 대화 내용을 외부로 전송하지 않습니다.
-        © 2026 Daejeon Welfare Portal (demo).</div>
+      <div class="copy">{privacy}
+        © 2026 AI프로젝트2 8조 (시연용).</div>
     </div></div>
     """, unsafe_allow_html=True)
 
@@ -2032,10 +2071,13 @@ def main():
             st.session_state["font_scale"] = 1.18; st.rerun()
         if b3.button("가++", use_container_width=True):
             st.session_state["font_scale"] = 1.38; st.rerun()
-        st.session_state["high_contrast"] = st.toggle(
-            "고대비 모드", value=st.session_state.get("high_contrast", False))
-        st.session_state["voice_mode"] = st.toggle(
+        # on_change 콜백은 다음 실행(rerun) '전에' 값을 반영한다 → 화면 맨 위 inject_css 가
+        # 바뀐 값을 바로 본다(예전엔 한 박자 늦어 고대비를 끌 때 두 번 눌러야 했음).
+        st.toggle("고대비 모드", value=st.session_state.get("high_contrast", False),
+                  key="hc_toggle", on_change=_sync_state, args=("hc_toggle", "high_contrast"))
+        st.toggle(
             "음성으로 답변 듣기", value=st.session_state.get("voice_mode", False),
+            key="voice_toggle", on_change=_sync_state, args=("voice_toggle", "voice_mode"),
             help=f"로컬 TTS: {get_tts().backend or '사용 불가'}")
         st.divider()
         view = st.radio("화면", ["대전노인복지HUB (어르신)", "관리자"], key="view")
