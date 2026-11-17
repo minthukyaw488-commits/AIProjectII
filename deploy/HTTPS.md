@@ -5,7 +5,7 @@
 코드 수정은 없다 — 앞단에 Caddy 를 두고 8003 으로 넘겨줄 뿐이다.
 
 ```
-휴대폰 ──https://djwelfare.duckdns.org──▶ Caddy(:443, 인증서) ──▶ Streamlit(localhost:8003)
+휴대폰 ──https://aiproject2.duckdns.org──▶ Caddy(:443, 인증서) ──▶ Streamlit(localhost:8003)
 ```
 
 ## 0. 준비 (팀장 / AWS 콘솔 권한자)
@@ -15,9 +15,9 @@
 
 ## 1. DuckDNS 도메인 만들기 (2분)
 1. https://www.duckdns.org 접속 → GitHub/Google 로 로그인
-2. sub domain 에 이름 입력(예: `djwelfare`) → **add domain**
+2. sub domain 에 이름 입력(예: `aiproject2`) → **add domain**
 3. current ip 칸에 서버 IP(예: `16.208.136.61`) 입력 → **update ip**
-4. 확인(서버에서): `getent hosts djwelfare.duckdns.org` → 서버 IP 가 나오면 OK
+4. 확인(서버에서): `getent hosts aiproject2.duckdns.org` → 서버 IP 가 나오면 OK
 
 ## 2. 서버: 80/443 을 다른 프로그램이 쓰는지 확인
 ```bash
@@ -39,7 +39,7 @@ caddy version
 ```bash
 cd ~/team/novem/ondevice_llm
 git pull origin main
-sed -i 's/djwelfare.duckdns.org/본인도메인.duckdns.org/' deploy/Caddyfile   # 이름이 다를 때만
+sed -i 's/aiproject2.duckdns.org/본인도메인.duckdns.org/' deploy/Caddyfile   # 이름이 다를 때만
 sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 sudo journalctl -u caddy -n 30 --no-pager
@@ -47,7 +47,7 @@ sudo journalctl -u caddy -n 30 --no-pager
 로그에 `certificate obtained successfully` 가 보이면 인증서 발급 완료.
 
 ## 5. 확인
-- 폰에서 `https://djwelfare.duckdns.org` → 자물쇠 🔒 표시 + 로그인 화면
+- 폰에서 `https://aiproject2.duckdns.org` → 자물쇠 🔒 표시 + 로그인 화면
 - AI상담에서 🎤 음성 기능이 마이크 권한을 묻는지
 - 안드로이드 Chrome: 메뉴 → **앱 설치**, iPhone Safari: 공유 → **홈 화면에 추가**
 
