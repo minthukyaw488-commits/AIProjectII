@@ -1052,15 +1052,17 @@ def ask_audio(client, wav: bytes):
 #   질문에 짧은 프로필 메모를 덧붙인다. 모두 선택 사항이라 비워두면 기존과 동일.
 # --------------------------------------------------------------------------
 def _profile_summary(p: dict) -> str:
-    def yn(v):
-        return "예" if v is True else ("아니오" if v is False else "모름")
+    """프로필 한 줄 요약 — '예'인 항목만 이름으로 적는다('아니오'·'모름'은 생략).
+    예) 나이 80세, 대전 서구 거주, 저소득, 혼자 거주, 거동 불편"""
     out = []
     if p.get("age") is not None:
         out.append(f"나이 {p['age']}세")
     if p.get("district"):
         out.append(f"대전 {p['district']} 거주")
-    out += [f"저소득 {yn(p.get('income_low'))}", f"독거 {yn(p.get('living_alone'))}",
-            f"거동불편 {yn(p.get('mobility_issue'))}", f"만성질환 {yn(p.get('chronic_illness'))}"]
+    for key, label in (("income_low", "저소득"), ("living_alone", "혼자 거주"),
+                       ("mobility_issue", "거동 불편"), ("chronic_illness", "만성질환")):
+        if p.get(key) is True:
+            out.append(label)
     return ", ".join(out)
 
 
@@ -1369,10 +1371,12 @@ def my_welfare_cards():
         chips = "".join(f'<span class="chip">{r.welfare.name}</span>' for r in maybe)
         maybe_html = ('<p class="sub" style="margin-top:22px">확인하면 받으실 수 있어요</p>'
                       f'<div class="chips">{chips}</div>')
+    ps = _profile_summary(p)
+    info = f"({ps})" if ps else ""          # '예'인 항목만 — 하나도 없으면 괄호 생략
     st.markdown(
         '<div class="sec" id="mywelfare"><div class="gov-wrap">'
         f'<h2>{user} 님 맞춤 복지</h2>'
-        f'<p class="sub">입력하신 정보({_profile_summary(p)})로 받으실 수 있는 복지입니다. '
+        f'<p class="sub">입력하신 정보{info}로 받으실 수 있는 복지입니다. '
         '카드를 누르면 자세히 안내해 드려요. · 정확한 기준은 주민센터 확인</p>'
         f'<div class="cat-grid">{cards}</div>'
         f'{maybe_html}'
