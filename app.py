@@ -1108,6 +1108,21 @@ def _set_login_params(name: str):
     st.query_params["t"] = _user_token(name)
 
 
+@st.dialog("로그아웃 확인")
+def _confirm_logout():
+    """잘못 눌러 바로 로그아웃되지 않도록 한 번 더 묻는다.
+    (성함·비밀번호를 기억하지 못하는 어르신이 다시 못 들어오는 일을 막기 위함)"""
+    st.markdown('<div style="font-size:1.12rem;line-height:1.7">정말 <b>로그아웃</b> 하시겠어요?'
+                '<br>다시 들어오실 때 <b>성함과 비밀번호</b>가 필요합니다.</div>',
+                unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    if c1.button("아니요, 계속 이용", type="primary", use_container_width=True,
+                 key="logout_no"):
+        st.rerun()                       # 창 닫기
+    if c2.button("네, 로그아웃", use_container_width=True, key="logout_yes"):
+        _logout()
+
+
 def _logout():
     """로그아웃 → 로그인 화면으로. 세션·URL(?u=,?t=) 모두 비워 새 계정으로 로그인 가능."""
     for k in ("auth_user", "profile", "profile_done", "chat", "pending_q"):
@@ -1377,7 +1392,7 @@ def header_nav(client):
                      f'font-weight:700">👤 {uu} 님</div>', unsafe_allow_html=True)
         if hc2.button("로그아웃", key="hdr_logout", use_container_width=True,
                       help="로그인 화면으로 돌아가 다른 계정으로 로그인합니다."):
-            _logout()
+            _confirm_logout()            # 바로 나가지 않고 한 번 더 확인
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -2041,7 +2056,7 @@ def main():
         if st.button("내 정보 수정", use_container_width=True):
             st.session_state["profile_done"] = False; st.rerun()
         if st.button("로그아웃", use_container_width=True):
-            _logout()
+            _confirm_logout()            # 바로 나가지 않고 한 번 더 확인
 
     inject_css()
     inject_pwa()
