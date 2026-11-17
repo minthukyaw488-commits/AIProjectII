@@ -1624,16 +1624,22 @@ def chat_area(client):
     # 레이아웃: 대화(위에서 크게) → 빠른버튼 → 입력(아래). 빠른 칩/분야 버튼을
     # 입력창 바로 위로 내려, 대화 내용이 화면 위쪽에서 잘 보이게 한다.
     _concern_banner()              # 통증·위기 표현 시 상담 안내 배너
+    # 어르신이 위아래로 스크롤하지 않도록: ① 입력창은 화면 아래에 고정
+    # ② 질문하면 새 질문·답변 위치로 자동 이동 ③ 빠른 버튼은 접어 두기(대화 시작 전엔 펼침)
+    st.markdown(_CHATBAR_CSS, unsafe_allow_html=True)
     hist_slot = st.container()     # 지난 대화(말풍선 + 출처 캡션) — 위
     live_slot = st.container()     # 새 답변이 토큰 단위로 스트리밍되는 자리
-    quick_replies(client)          # 즉시 전송 칩(처음·서비스목록·온라인신청) — 입력 바로 위
-    quick_actions(client)          # 분야→질문 빠른 버튼 — 입력 바로 위
+    has_chat = bool(st.session_state.get("chat"))
+    with st.expander("💡 자주 묻는 질문 보기 — 눌러서 바로 물어보세요", expanded=not has_chat):
+        quick_replies(client)      # 즉시 전송 칩(처음·서비스목록·온라인신청)
+        quick_actions(client)      # 분야→질문 빠른 버튼
     attach_text, ask_file = chat_uploader()   # 📎 사진·문서 업로드(OCR)
-    with st.form("ai_text", clear_on_submit=True):
-        tc1, tc2 = st.columns([5, 1])
-        q = tc1.text_input("입력", placeholder="궁금하신 내용을 글로 입력하셔도 됩니다",
-                           label_visibility="collapsed")
-        go = tc2.form_submit_button("보내기", use_container_width=True)
+    with st.container(key="chatbar"):          # 화면 아래 고정 입력창
+        with st.form("ai_text", clear_on_submit=True):
+            tc1, tc2 = st.columns([5, 1])
+            q = tc1.text_input("입력", placeholder="궁금하신 내용을 글로 입력하셔도 됩니다",
+                               label_visibility="collapsed")
+            go = tc2.form_submit_button("보내기", use_container_width=True)
 
     pending = st.session_state.pop("pending_q", None)
     pending_attach = None
@@ -1647,9 +1653,51 @@ def chat_area(client):
         _render_history(st.session_state.get("chat", []))
     if pending:
         with live_slot:
+            st.markdown('<div id="live-q"></div>', unsafe_allow_html=True)
+            _scroll_to("#live-q")                  # 답변을 기다리는 동안 새 질문 위치로
             ask_and_stream(client, pending, attach=pending_attach)   # 스트리밍 + 출처 + 첨부근거
+        st.session_state["scroll_last_q"] = True
         st.rerun()                            # 다음 런에서 지난 대화로 정착
+    if st.session_state.pop("scroll_last_q", False):
+        _scroll_to(".bub.user", last=True)    # 방금 한 질문(과 그 아래 답변)이 보이게
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+# AI상담 화면 전용: 입력창을 하단 탭 바로 위에 고정하고, 고정창에 가리지 않도록 아래 여백을 둔다.
+_CHATBAR_CSS = """
+<style>
+  .st-key-chatbar{position:fixed; left:50%; transform:translateX(-50%); bottom:84px;
+    width:min(1100px, calc(100% - 32px)); z-index:9998; background:#ffffff;
+    border:2px solid #d9d4c7; border-radius:16px; padding:8px 10px 2px;
+    box-shadow:0 8px 24px -10px rgba(16,35,61,.35)}
+  .block-container{padding-bottom:190px !important}
+  @media(max-width:640px){
+    .st-key-chatbar{bottom:calc(58px + env(safe-area-inset-bottom)); width:calc(100% - 16px);
+      border-radius:14px; padding:6px 8px 0}
+    /* 폰에서도 입력창과 '보내기'를 한 줄에(세로로 쌓이면 화면을 너무 가림) */
+    .st-key-chatbar [data-testid="stHorizontalBlock"]{flex-wrap:nowrap !important; gap:6px !important}
+    .st-key-chatbar [data-testid="stColumn"]{min-width:0 !important; width:auto !important}
+    .st-key-chatbar [data-testid="stColumn"]:first-child{flex:1 1 auto !important}
+    .st-key-chatbar [data-testid="stColumn"]:last-child{flex:0 0 84px !important}
+    .block-container{padding-bottom:160px !important}
+  }
+</style>
+"""
+
+
+def _scroll_to(selector: str, last: bool = False):
+    """부모 페이지에서 selector 위치로 부드럽게 스크롤(고정 입력창·상단 여백 고려)."""
+    import json
+    import time
+    import streamlit.components.v1 as components
+    pick = "els[els.length-1]" if last else "els[0]"
+    # 매번 내용이 달라야 Streamlit 이 스크립트를 다시 실행한다(같으면 재사용되어 안 움직임)
+    components.html(
+        f"<!-- {time.time_ns()} -->"
+        "<script>setTimeout(function(){try{var d=window.parent.document;"
+        f"var els=d.querySelectorAll({json.dumps(selector)});if(!els.length)return;"
+        f"var el={pick};el.scrollIntoView({{behavior:'smooth',block:'start'}});"
+        "}catch(e){}},350);</script>", height=0)
 
 
 def category_cards(client):
