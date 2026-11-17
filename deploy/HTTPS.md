@@ -82,10 +82,14 @@ curl -sI http://aiproject2.duckdns.org | head -3
 
 인증서(Let's Encrypt) 발급 + https 자동 설정:
 ```bash
-sudo apt install -y certbot python3-certbot-apache
+sudo snap install --classic certbot
+sudo ln -sf /snap/bin/certbot /usr/local/bin/certbot
 sudo certbot --apache -d aiproject2.duckdns.org --redirect --agree-tos --register-unsafely-without-email -n
 curl -sI https://aiproject2.duckdns.org | head -3
 ```
+> ⚠️ `apt install certbot` 은 쓰지 않는다: 앱용으로 pip 설치한 최신 cryptography/pyOpenSSL
+> (`/usr/local/lib/python3.12`) 과 충돌해 `module 'OpenSSL.crypto' has no attribute 'X509Req'`
+> 오류가 난다. snap 판은 격리돼 있어 앱 패키지와 충돌하지 않는다(실제 서버에서 확인).
 `Congratulations` / `Successfully deployed certificate` 가 보이면 완료. 인증서는 certbot 이 자동 갱신한다.
 
 되돌리기: `sudo a2dissite aiproject2 aiproject2-le-ssl; sudo systemctl reload apache2`
