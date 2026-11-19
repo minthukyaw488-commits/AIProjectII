@@ -1469,46 +1469,86 @@ def login_screen():
 
 
 def profile_screen():
-    """2단계 — 내 정보 입력. 저장하면 profile_done 설정 후 포털로."""
+    """내 정보 — 저장된 정보가 있으면 먼저 '보기' 화면(실수로 바뀌지 않게)을 보여 주고,
+    '✏️ 내 정보 수정'을 눌러야 고칠 수 있다. 처음 가입한 분은 바로 입력 화면."""
     inject_css()
-    st.markdown(_NARROW_FORM_CSS.format(w=660), unsafe_allow_html=True)
-    p = st.session_state.get("profile", {})
+    st.markdown(_NARROW_FORM_CSS.format(w=660) + _PROFILE_VIEW_CSS, unsafe_allow_html=True)
+    p = st.session_state.get("profile") or {}
     user = st.session_state.get("auth_user", "")
-    st.markdown('<div class="gov-wrap sec" style="max-width:620px;margin:5vh auto">',
+    has_saved = any(v is not None for v in p.values())
+    editing = st.session_state.get("profile_edit", not has_saved)
+    st.markdown('<div class="gov-wrap sec" style="max-width:620px;margin:1vh auto 0">',
                 unsafe_allow_html=True)
     st.markdown(
         '<div style="text-align:center;margin-bottom:12px">'
         '<div class="seal" style="margin:0 auto 12px;width:52px;height:52px;font-size:26px">🧓</div>'
         f'<div style="font-size:23px;font-weight:800;color:#0f2f6f;letter-spacing:-.03em">{user} 님, 반갑습니다</div>'
-        '<span style="display:inline-block;margin-top:12px;font-size:12.5px;font-weight:800;color:#2f6bff;'
-        'background:#f5f8fd;padding:6px 14px;border-radius:999px">2단계 · 내 정보</span>'
         '</div>', unsafe_allow_html=True)
-    st.caption("받으실 수 있는 복지를 정확히 찾기 위해 사용됩니다. 모르면 비워두셔도 됩니다.")
+    rev = {None: "모름", True: "예", False: "아니오"}
+
+    if not editing:                                   # ── 보기 화면(고칠 수 없음) ──
+        rows = [("나이", f"만 {p['age']}세" if p.get("age") is not None else "입력 안 함"),
+                ("성별", p.get("gender") or "입력 안 함"),
+                ("사시는 구", p.get("district") or "입력 안 함"),
+                ("연락처", p.get("phone") or "입력 안 함")]
+        rows += [(label, rev[p.get(key)]) for key, label in _PROFILE_YN]
+        import html as _h
+        st.markdown('<div class="pf-card">' + "".join(
+            f'<div class="pf-row"><span>{_h.escape(k)}</span><b>{_h.escape(v)}</b></div>'
+            for k, v in rows) + '</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        if c1.button("← 돌아가기", use_container_width=True, key="pf_back"):
+            st.session_state["profile_done"] = True
+            st.rerun()
+        if c2.button("✏️ 내 정보 수정", type="primary", use_container_width=True, key="pf_edit"):
+            st.session_state["profile_edit"] = True
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        return
+
+    # ── 입력/수정 화면 ────────────────────────────────────────────
+    # 드롭다운(두 번 눌러야 하고 글씨가 작음) 대신 한 번에 누르는 큰 [예][아니오][모름] 버튼
+    st.caption("받으실 수 있는 복지를 찾는 데 쓰입니다. 모르시면 '모름'으로 두셔도 됩니다.")
+    st.markdown(_PROFILE_RADIO_CSS, unsafe_allow_html=True)
     tri = {"모름": None, "예": True, "아니오": False}
     rev = {None: "모름", True: "예", False: "아니오"}
-    c1, c2 = st.columns(2)
-    age_s = c1.text_input("나이(만)", value="" if p.get("age") is None else str(p["age"]))
-    districts = ["선택 안 함", "동구", "중구", "서구", "유성구", "대덕구"]
-    di = districts.index(p["district"]) if p.get("district") in districts else 0
-    district = c2.selectbox("거주 구", districts, index=di)
-    income = c1.selectbox("저소득(기초수급 등)", ["모름", "예", "아니오"],
-                          index=["모름", "예", "아니오"].index(rev[p.get("income_low")]))
-    alone = c2.selectbox("독거(혼자 거주)", ["모름", "예", "아니오"],
-                         index=["모름", "예", "아니오"].index(rev[p.get("living_alone")]))
-    mob = c1.selectbox("거동 불편", ["모름", "예", "아니오"],
-                       index=["모름", "예", "아니오"].index(rev[p.get("mobility_issue")]))
-    ill = c2.selectbox("만성질환·기억력 저하", ["모름", "예", "아니오"],
-                       index=["모름", "예", "아니오"].index(rev[p.get("chronic_illness")]))
-    if st.button("저장하고 시작하기", type="primary", use_container_width=True):
+    opts = ["예", "아니오", "모름"]
+    age_s = st.text_input("나이 (만)", value="" if p.get("age") is None else str(p["age"]),
+                          placeholder="예: 72")
+    genders = ["남성", "여성", "선택 안 함"]
+    gi = genders.index(p["gender"]) if p.get("gender") in genders else len(genders) - 1
+    gender = st.radio("성별", genders, index=gi, horizontal=True, key="pf_gender")
+    districts = ["동구", "중구", "서구", "유성구", "대덕구", "선택 안 함"]
+    di = districts.index(p["district"]) if p.get("district") in districts else len(districts) - 1
+    district = st.radio("사시는 구", districts, index=di, horizontal=True, key="pf_district")
+    phone_s = st.text_input("연락처 (선택)", value=p.get("phone") or "", placeholder="예: 010-1234-5678",
+                            help="담당 사회복지사가 안부를 여쭐 때 쓰입니다. 적지 않으셔도 됩니다.")
+    ans = {key: st.radio(label, opts, index=opts.index(rev[p.get(key)]), horizontal=True,
+                         key=f"pf_{key}")
+           for key, label in _PROFILE_YN}
+    b1, b2 = st.columns(2)
+    if has_saved:
+        if b1.button("취소", use_container_width=True, key="pf_cancel"):
+            st.session_state["profile_edit"] = False
+            st.rerun()
+    elif b1.button("나중에 입력하기", use_container_width=True, key="pf_skip"):
+        st.session_state["profile_done"] = True
+        st.rerun()
+    if b2.button("저장" if has_saved else "저장하고 시작하기", type="primary",
+                 use_container_width=True, key="pf_save"):
         try:
             age = int(age_s) if age_s.strip() else None
         except ValueError:
             age = None
+        import re as _re
+        _digits = _re.sub(r"\D", "", phone_s or "")
+        phone = phone_s.strip() if 9 <= len(_digits) <= 11 else None   # 숫자 9~11자리만 저장
         prof = {"age": age, "district": None if district == "선택 안 함" else district,
-                "income_low": tri[income], "living_alone": tri[alone],
-                "mobility_issue": tri[mob], "chronic_illness": tri[ill]}
+                "gender": None if gender == "선택 안 함" else gender, "phone": phone,
+                **{k: tri[v] for k, v in ans.items()}}
         st.session_state["profile"] = prof
         st.session_state["profile_done"] = True
+        st.session_state["profile_edit"] = False
         # 저장(MySQL 또는 파일 — 민감정보라 json 산출물은 .gitignore)
         try:
             from src import db
@@ -1517,6 +1557,39 @@ def profile_screen():
             pass
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+# 내 정보 질문(어르신이 알아듣기 쉬운 말로) — 저장 키는 그대로
+_PROFILE_YN = [("living_alone", "혼자 사시나요?"),
+               ("income_low", "기초생활수급자이신가요?"),
+               ("mobility_issue", "거동이 불편하신가요?"),
+               ("chronic_illness", "만성질환·기억력 저하가 있으신가요?")]
+
+# [예][아니오][모름]·구 선택을 손가락으로 누르기 쉬운 큰 버튼처럼
+_PROFILE_RADIO_CSS = """
+<style>
+  [data-testid="stRadio"] > label p, [data-testid="stWidgetLabel"] p{font-size:1.1rem !important;
+    font-weight:700; color:#1c2430}
+  [data-testid="stRadio"] [role="radiogroup"]{gap:8px !important; flex-wrap:wrap}
+  [data-testid="stRadio"] label[data-testid="stRadioOption"]{border:2px solid #b9b3a4; border-radius:12px;
+    padding:8px 16px 8px 10px; background:#fff; margin:0 !important; min-height:48px;
+    align-items:center}
+  [data-testid="stRadio"] label[data-testid="stRadioOption"]:is([data-selected],:has(input:checked)){border-color:#1e3a8a;
+    background:#eef3ff}
+  [data-testid="stRadio"] label[data-testid="stRadioOption"] p{font-size:1.08rem !important}
+</style>
+"""
+
+_PROFILE_VIEW_CSS = """
+<style>
+  .pf-card{background:#fff; border:2px solid #d9d4c7; border-radius:16px; padding:6px 16px;
+    margin-bottom:14px}
+  .pf-row{display:flex; justify-content:space-between; gap:12px; padding:12px 0;
+    border-bottom:1px solid #ece8df; font-size:1.08rem}
+  .pf-row:last-child{border-bottom:0}
+  .pf-row span{color:#3d4655} .pf-row b{color:#1c2430; text-align:right; white-space:nowrap}
+</style>
+"""
 
 
 def my_welfare_cards():
@@ -1528,7 +1601,9 @@ def my_welfare_cards():
         return
     try:
         from src.welfare_rules import Profile, recommend
-        eligible, maybe, _ = recommend(Profile(**p))
+        import dataclasses
+        _f = {f.name for f in dataclasses.fields(Profile)}   # 성별·연락처 등 다른 항목은 제외
+        eligible, maybe, _ = recommend(Profile(**{k: v for k, v in p.items() if k in _f}))
     except Exception:
         return
     user = st.session_state.get("auth_user", "어르신")
