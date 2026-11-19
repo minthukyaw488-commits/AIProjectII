@@ -493,6 +493,47 @@ def inject_css():
     if not hc:                     # 고대비 모드는 자체 흑백 팔레트를 그대로 사용
         st.markdown(_ELDER_CSS, unsafe_allow_html=True)
     st.markdown(_PHONE_TEXT_CSS, unsafe_allow_html=True)   # 폰: 버튼·하단 탭 글씨 16px 이상
+    # 움직임(애니메이션): 고대비 모드에서는 끄고, 기기의 '동작 줄이기' 설정도 존중한다.
+    st.markdown(_NO_MOTION_CSS if hc else _MOTION_CSS, unsafe_allow_html=True)
+
+
+# ── UI 애니메이션 — 어르신용이라 느리고 부드럽게(0.2~0.4초), 깜빡임 없음 ─────────────
+#  ① 새 말풍선 부드럽게 등장(마지막 두 개만 — 지난 대화가 매번 다시 움직이지 않게)
+#  ② 답변 준비 중 '점 세 개' 표시(아래 _TYPING_HTML)
+#  ③ 버튼을 누르면 살짝 눌리는 느낌
+#  ④ 맞춤복지 카드 순서대로 등장(기존 fadeUp, 9장까지 지연)
+#  ⑤ 위기 안내 배너: 2.4초 주기의 은은한 테두리 빛(초당 3회 이상 깜빡임 금지 기준 준수)
+#  기기 설정 '동작 줄이기(prefers-reduced-motion)'면 모든 움직임을 끈다.
+_MOTION_CSS = """
+<style>
+  @keyframes bubIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+  @keyframes dotJump{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-6px);opacity:1}}
+  @keyframes softGlow{0%,100%{box-shadow:0 0 0 0 rgba(176,0,32,0)}50%{box-shadow:0 0 0 6px rgba(176,0,32,.18)}}
+  .chat .row:nth-last-child(-n+2) .bub, .bub-label{animation:bubIn .35s ease-out both}
+  .bub.typing{display:inline-flex; align-items:center; gap:10px; color:#5c6b86}
+  .bub.typing .dots i{display:inline-block; width:9px; height:9px; margin:0 2px; border-radius:50%;
+    background:#2f6bff; animation:dotJump 1.2s ease-in-out infinite}
+  .bub.typing .dots i:nth-child(2){animation-delay:.15s}
+  .bub.typing .dots i:nth-child(3){animation-delay:.3s}
+  .stApp div[data-testid="stButton"] > button,
+  .stApp div[data-testid="stFormSubmitButton"] > button{transition:transform .12s ease, box-shadow .12s ease}
+  .stApp div[data-testid="stButton"] > button:active,
+  .stApp div[data-testid="stFormSubmitButton"] > button:active{transform:scale(.96)}
+  .stApp .st-key-htnav div[data-testid="stButton"] > button:active{transform:scale(.92) !important}
+  .cat-card:nth-child(7){animation-delay:.3s} .cat-card:nth-child(8){animation-delay:.35s}
+  .cat-card:nth-child(9){animation-delay:.4s}
+  .warn-banner.crisis{animation:softGlow 2.4s ease-in-out infinite}
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{animation:none !important; transition:none !important}
+  }
+</style>
+"""
+_NO_MOTION_CSS = """
+<style>*, *::before, *::after{animation:none !important; transition:none !important}</style>
+"""
+_TYPING_HTML = ('<div class="chat" style="padding:2px 0"><div class="row l">'
+                '<div class="bub bot typing"><span class="dots"><i></i><i></i><i></i></span>'
+                '답변을 준비하고 있어요</div></div></div>')
 
 
 # 폰(640px 이하)에서 버튼·하단 탭·접기 메뉴 글씨가 14.9px 등 16px 보다 작아지던 문제.
@@ -839,7 +880,7 @@ def _source_caption(sources) -> str:
     return ("📚 Source: " + ", ".join(seen[:3])) if seen else ""
 
 
-def _answer_for(client, q: str, attach: str | None = None):
+def _answer_for(client, q: str, attach: str | None = None, spinner: bool = True):
     """질문 → 결과 dict. 인사/프로필/오류/저장·알림 처리(채팅 append 는 호출부에서).
     attach: 업로드한 사진·문서에서 읽은 글자(있으면 답변 근거로 함께 전달). 실패 시 None."""
     if is_crisis(q):
@@ -864,7 +905,9 @@ def _answer_for(client, q: str, attach: str | None = None):
         # 맞춤형: 프로필은 질문에 붙이지 않고 RAG 체인의 '시스템 프롬프트'로 전달한다
         # (나이·거주지·건강 반영 + 나이 자격 안내). 질문 원문은 깔끔하게 유지.
         prof = p if _profile_has_info(p) else None
-        with st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…"):
+        import contextlib
+        with (st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…") if spinner
+              else contextlib.nullcontext()):
             r = (client.ask(q_send, profile=prof) if st.session_state.get("use_rag", True)
                  else client.ask_norag(q_send))
         if "error" in r:
@@ -982,7 +1025,12 @@ def ask_and_stream(client, q: str, attach: str | None = None):
     _bubble("user", q)
     if attach:
         st.caption("📎 올려 주신 사진·문서를 읽어서 참고했어요.")
-    r = _answer_for(client, q, attach=attach)
+    typing = st.empty()
+    typing.markdown(_TYPING_HTML, unsafe_allow_html=True)   # ② 답변 준비 중 '점 세 개'
+    try:
+        r = _answer_for(client, q, attach=attach, spinner=False)
+    finally:
+        typing.empty()
     if not r:
         return
     _record_signal(q, r)        # 이상신호 기록(키워드+대화분석 합쳐 메시지당 1건)

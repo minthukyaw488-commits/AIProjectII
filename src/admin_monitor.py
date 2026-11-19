@@ -34,6 +34,17 @@ def render(exclude=()):
       .badge.w {{background:#fff4e6;color:#b45309}}
       .badge.ok {{background:#e6f4ea;color:#1f7a43}}
       .ucard.ok {{border-left-color:#1f7a43}}
+  /* ⑥ 위기 카드: 은은한 붉은 빛(2.4초 주기) + 배지 천천히 맥박, 카드 순서대로 등장 */
+  @keyframes ucIn {{from{{opacity:0;transform:translateY(8px)}}to{{opacity:1;transform:none}}}}
+  @keyframes ucGlow {{0%,100%{{box-shadow:0 8px 24px -16px rgba(16,35,61,.3)}}
+                     50%{{box-shadow:0 0 0 5px rgba(217,48,37,.16)}}}}
+  @keyframes badgePulse {{0%,100%{{transform:scale(1)}}50%{{transform:scale(1.08)}}}}
+  .ucard {{animation:ucIn .35s ease-out both}}
+  .ucard.crisis {{animation:ucIn .35s ease-out both, ucGlow 2.4s ease-in-out .35s infinite}}
+  .badge.c {{display:inline-block;animation:badgePulse 2s ease-in-out infinite}}
+  @media (prefers-reduced-motion: reduce) {{
+    .ucard, .ucard.crisis, .badge.c {{animation:none !important}}
+  }}
     </style>
     """, unsafe_allow_html=True)
 
