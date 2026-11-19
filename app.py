@@ -1138,6 +1138,32 @@ def _set_login_params(name: str):
     st.query_params["t"] = _user_token(name)
 
 
+@st.dialog("글자 크기·설정")
+def _settings_dialog():
+    """어르신이 자주 쓰는 설정 3가지만: 글자 크기, 고대비, 음성으로 답변 듣기.
+    누르면 바로 화면 전체에 적용되도록 매번 st.rerun()(창은 닫힘)."""
+    st.markdown("**글자 크기**")
+    cur = st.session_state.get("font_scale", 1.0)
+    cols = st.columns(3)
+    for col, (label, val) in zip(cols, [("가 보통", 1.0), ("가+ 크게", 1.18), ("가++ 아주 크게", 1.38)]):
+        if col.button(label, use_container_width=True, key=f"fs_{val}",
+                      type="primary" if abs(cur - val) < 0.01 else "secondary"):
+            st.session_state["font_scale"] = val
+            st.rerun()
+    hc = st.session_state.get("high_contrast", False)
+    st.markdown(f"**고대비(흑백) 화면** — 지금: {'켜짐' if hc else '꺼짐'}")
+    if st.button("고대비 끄기" if hc else "고대비 켜기", use_container_width=True, key="hc_btn"):
+        st.session_state["high_contrast"] = not hc
+        st.rerun()
+    vm = st.session_state.get("voice_mode", False)
+    st.markdown(f"**답변을 소리로 듣기** — 지금: {'켜짐' if vm else '꺼짐'}")
+    if st.button("소리 끄기" if vm else "소리 켜기", use_container_width=True, key="vm_btn"):
+        st.session_state["voice_mode"] = not vm
+        st.rerun()
+    if st.button("닫기", type="primary", use_container_width=True, key="settings_close"):
+        st.rerun()
+
+
 @st.dialog("로그아웃 확인")
 def _confirm_logout():
     """잘못 눌러 바로 로그아웃되지 않도록 한 번 더 묻는다.
@@ -1389,6 +1415,9 @@ def header_nav(client):
         '<span>대전광역시 어르신 복지 AI 안내</span>'
         '<span>궁금한 점은 복지상담 ☎ 129</span>'
         '</div></div>' + _HEADER_TIDY_CSS + _SIDEBAR_OPEN_CSS, unsafe_allow_html=True)
+    with st.container(key="settingsbtn"):
+        if st.button("⚙️ 글자 크기·설정", key="open_settings"):
+            _settings_dialog()
     st.markdown('<div class="gov-wrap" style="padding-top:14px;padding-bottom:6px">',
                 unsafe_allow_html=True)
     b, s, n = st.columns([1.5, 2.1, 2.1], vertical_alignment="center")
@@ -1434,17 +1463,13 @@ def header_nav(client):
 # 열기 버튼만 왼쪽 위에 보이게 해 글자 크기·고대비 등 설정에 다시 들어갈 수 있게 한다.
 _SIDEBAR_OPEN_CSS = """
 <style>
-  [data-testid="stExpandSidebarButton"], [data-testid="stSidebarCollapsedControl"]{
-    visibility:visible !important; position:fixed !important; top:10px; left:10px;
-    z-index:10000; background:#ffffff; border:2px solid #1e3a8a; border-radius:12px;
-    padding:2px 4px; box-shadow:0 4px 12px rgba(16,35,61,.18)}
-  [data-testid="stExpandSidebarButton"] *, [data-testid="stSidebarCollapsedControl"] *{
-    visibility:visible !important; color:#1e3a8a !important}
-  /* 아이콘(»)만으로는 뜻을 알기 어려워 '글자 크기·설정' 글자를 붙인다 */
-  [data-testid="stExpandSidebarButton"]::after{content:"글자 크기·설정"; margin-left:4px;
-    font-size:15px; font-weight:700; color:#1e3a8a; white-space:nowrap}
-  [data-testid="stExpandSidebarButton"]{width:auto !important; display:flex !important;
-    align-items:center; padding:4px 10px 4px 6px !important}
+  /* 사이드바 대신 '⚙️ 글자 크기·설정' 창을 쓴다 */
+  [data-testid="stSidebar"], [data-testid="stExpandSidebarButton"],
+  [data-testid="stSidebarCollapsedControl"]{display:none !important}
+  .st-key-settingsbtn{position:fixed; top:10px; left:10px; z-index:10000; width:auto !important}
+  .st-key-settingsbtn button{background:#ffffff !important; border:2px solid #1e3a8a !important;
+    border-radius:12px !important; box-shadow:0 4px 12px rgba(16,35,61,.18)}
+  .st-key-settingsbtn button p{color:#1e3a8a !important; font-weight:700; font-size:15px !important}
 </style>
 """
 
@@ -1711,6 +1736,24 @@ def chat_area(client):
     st.markdown('<p class="sub" style="margin-top:-4px">궁금하신 복지를 편하게 물어보세요. '
                 '대전 어르신 맞춤으로 답해 드립니다.</p>', unsafe_allow_html=True)
     st.session_state["use_rag"] = True   # 항상 RAG 사용(문서 근거)
+    # (사이드바에 있던) 새 대화·음성 대화를 상담 화면 위쪽으로
+    a1, a2 = st.columns(2)
+    if a1.button("🔄 새 대화 시작", use_container_width=True, key="new_chat"):
+        # 상담 엔진이 이미 켜져 있을 때만 엔진 쪽 대화 기록도 비운다
+        # (켜지지 않았으면 엔진을 새로 띄우느라 오래 기다리게 되므로 화면 기록만 비움)
+        # (인사말 답변처럼 엔진 없이 만든 결과는 question/answer/sources 키만 있다)
+        if set(st.session_state.get("state") or {}) - {"question", "answer", "sources"}:
+            try:
+                st.session_state["state"] = client.reset()
+            except Exception:
+                pass
+        st.session_state["chat"] = []
+        st.session_state["alerts"] = []
+        st.session_state.pop("last_mic", None)
+        st.rerun()
+    if a2.button("🎤 말로 묻기", use_container_width=True, key="voice_chat"):
+        st.session_state["mode"] = "voice"
+        st.rerun()
     # 레이아웃: 대화(위에서 크게) → 빠른버튼 → 입력(아래). 빠른 칩/분야 버튼을
     # 입력창 바로 위로 내려, 대화 내용이 화면 위쪽에서 잘 보이게 한다.
     _concern_banner()              # 통증·위기 표현 시 상담 안내 배너
@@ -2125,52 +2168,11 @@ def main():
         except Exception:
             pass
 
-    with st.sidebar:
-        st.subheader("화면 설정")
-        st.caption("글자 크기")
-        b1, b2, b3 = st.columns(3)
-        if b1.button("가", use_container_width=True):
-            st.session_state["font_scale"] = 1.0; st.rerun()
-        if b2.button("가+", use_container_width=True):
-            st.session_state["font_scale"] = 1.18; st.rerun()
-        if b3.button("가++", use_container_width=True):
-            st.session_state["font_scale"] = 1.38; st.rerun()
-        # on_change 콜백은 다음 실행(rerun) '전에' 값을 반영한다 → 화면 맨 위 inject_css 가
-        # 바뀐 값을 바로 본다(예전엔 한 박자 늦어 고대비를 끌 때 두 번 눌러야 했음).
-        st.toggle("고대비 모드", value=st.session_state.get("high_contrast", False),
-                  key="hc_toggle", on_change=_sync_state, args=("hc_toggle", "high_contrast"))
-        st.toggle(
-            "음성으로 답변 듣기", value=st.session_state.get("voice_mode", False),
-            key="voice_toggle", on_change=_sync_state, args=("voice_toggle", "voice_mode"),
-            help=f"로컬 TTS: {get_tts().backend or '사용 불가'}")
-        st.divider()
-        view = st.radio("화면", ["대전노인복지HUB (어르신)", "관리자"], key="view")
-        _na = len(st.session_state.get("admin_alerts", []))
-        if _na:
-            st.markdown(f'<div style="background:#fdecec;border:1px solid #f3b4b4;'
-                        f'border-radius:10px;padding:8px 12px;color:#8a1c13;'
-                        f'font-weight:700;font-size:.9rem;margin:-4px 0 6px">'
-                        f'🚨 관리자 알림 {_na}건 — 관리자 화면에서 확인</div>',
-                        unsafe_allow_html=True)
-        st.caption("상담 방식")
-        if st.button("텍스트·검색", use_container_width=True):
-            st.session_state["mode"] = "text"; st.rerun()
-        if st.button("음성 대화 (핸즈프리)", use_container_width=True):
-            st.session_state["mode"] = "voice"; st.rerun()
-        if st.button("대화 초기화", use_container_width=True):
-            st.session_state["state"] = client.reset()
-            st.session_state["chat"] = []
-            st.session_state["alerts"] = []
-            st.session_state.pop("last_mic", None)
-            st.rerun()
-
-    with st.sidebar:
-        st.divider()
-        st.caption(f"👤 {st.session_state.get('auth_user','')} 님")
-        if st.button("내 정보 수정", use_container_width=True):
-            st.session_state["profile_done"] = False; st.rerun()
-        if st.button("로그아웃", use_container_width=True):
-            _confirm_logout()            # 바로 나가지 않고 한 번 더 확인
+    # 사이드바는 폰에서 닫힌 채 시작해 어르신이 찾기 어려워 없앴다.
+    #  · 글자 크기·고대비·음성 답변 → 왼쪽 위 '⚙️ 글자 크기·설정' 창(_settings_dialog)
+    #  · 내 정보·로그아웃 → 머리글 / 새 대화·음성 대화 → AI상담 화면
+    #  · 관리자 화면 → 별도 관리자 앱(app_admin.py)
+    view = "대전노인복지HUB (어르신)"
 
     inject_css()
     inject_pwa()
