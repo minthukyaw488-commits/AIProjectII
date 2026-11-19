@@ -249,6 +249,7 @@ def inject_css():
       .cat-ic svg{{width:27px;height:27px;color:#fff}}
       .cat-name{{font-size:1.36rem;font-weight:800;letter-spacing:-.02em;color:#ffffff}}
       .cat-desc{{font-size:1.02rem;color:#ffffff;font-weight:500;opacity:.92}}
+      .cat-card .cat-desc{{padding-right:30px}}   /* 오른쪽 아래 → 화살표와 글자가 겹치지 않게 */
       .cat-card .arw{{position:absolute;right:24px;bottom:22px;font-size:1.4rem;opacity:.55;
         transition:transform .2s}}
       .cat-card:hover .arw{{transform:translateX(5px);opacity:.95}}
@@ -688,6 +689,7 @@ def bottom_tab_bar(active="home"):
             if col.button(label, key=f"nav_{tab}", use_container_width=True, type=kind):
                 st.session_state["tab"] = tab
                 st.session_state.pop("notice", None)   # 탭 이동 시 공지 상세 닫기
+                st.session_state.pop("welfare", None)  # 맞춤 복지 상세도 닫기
                 st.rerun()
 
 
@@ -1279,6 +1281,109 @@ def _notice_href(i: int) -> str:
     return f"?u={quote(u)}&t={quote(t)}&notice={i}"
 
 
+def _welfare_href(name: str) -> str:
+    """맞춤 복지 상세 페이지 링크: ?u=&t=&w=<복지 이름> (로그인 유지)."""
+    from urllib.parse import quote
+    u = st.session_state.get("auth_user", "")
+    t = _user_token(u) if u else ""
+    return f"?u={quote(u)}&t={quote(t)}&w={quote(name)}"
+
+
+def welfare_detail(name: str):
+    """맞춤 복지 카드 상세 — 챗봇을 거치지 않고 바로 보여 주는 정적 안내.
+    내 정보 기준으로 '왜 받을 수 있는지'를 먼저 보여 주고, 대상·지원 내용·신청 방법·문의처 순."""
+    import html as _h
+    from src.welfare_details import get_detail, meal_centers
+    from src.welfare_rules import Profile, get_welfare_table, _check_one
+    w = next((x for x in get_welfare_table() if x.name == name), None)
+    if w is None:
+        st.session_state.pop("welfare", None)
+        st.rerun()
+        return
+    d = get_detail(name) or {}
+    p = st.session_state.get("profile", {})
+    try:
+        reasons = _check_one(Profile(**p), w).reasons
+    except Exception:
+        reasons = []
+    reasons = [r for r in reasons if "필요" not in r or r.startswith("※")]
+
+    st.markdown('<div class="gov-wrap sec" id="welfare-detail">', unsafe_allow_html=True)
+    if st.button("← 맞춤 복지 목록으로", key="welfare_back"):
+        st.session_state.pop("welfare", None)
+        st.rerun()
+
+    def _ul(items):
+        return "<ul>" + "".join(f"<li>{_h.escape(i)}</li>" for i in items) + "</ul>"
+
+    def _sec(title, body):
+        return f'<div class="wd-sec"><div class="wd-h">{title}</div>{body}</div>'
+
+    parts = [
+        '<div class="wd-head">'
+        f'<span class="wd-ic">{d.get("icon", "✅")}</span>'
+        f'<div><div class="wd-title">{_h.escape(name)}</div>'
+        f'<div class="wd-sum">{_h.escape(d.get("what") or w.summary)}</div></div></div>']
+    if reasons:
+        user = _h.escape(st.session_state.get("auth_user", "어르신"))
+        parts.append(f'<div class="wd-why"><b>✅ {user} 님이 받으실 수 있는 이유</b>'
+                     f'{_ul(reasons)}</div>')
+    if d.get("who"):
+        parts.append(_sec("👥 누가 받을 수 있나요?", _ul(d["who"])))
+    if d.get("get"):
+        parts.append(_sec("🎁 무엇을 받나요?", _ul(d["get"])))
+    if d.get("how"):
+        parts.append(_sec("📝 어떻게 신청하나요?", _ul(d["how"])))
+    if d.get("centers"):
+        cs = meal_centers(p.get("district"))
+        if cs:
+            gu = _h.escape(p.get("district") or "대전")
+            rows = "".join(
+                f'<li><b>{_h.escape(c["name"])}</b> · '
+                f'<a href="tel:{_h.escape(c["phone"])}">☎ {_h.escape(c["phone"])}</a>'
+                f'<br><span class="wd-addr">{_h.escape(c["addr"])}</span></li>' for c in cs)
+            parts.append(_sec(f"📍 {gu} 수행기관", f"<ul>{rows}</ul>"))
+    if d.get("call"):
+        parts.append(_sec("☎ 문의", f'<p>{_h.escape(d["call"])}</p>'))
+    note = w.verify_note or "정확한 기준은 주민센터에서 확인하세요"
+    src = f' · 출처: {_h.escape(d["source"])}' if d.get("source") else ""
+    parts.append(f'<div class="wd-note">※ {_h.escape(note)}{src}</div>')
+    st.markdown(_WELFARE_DETAIL_CSS + '<div class="wd-card">' + "".join(parts) + '</div>',
+                unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("💬 AI 도우미에게 더 물어보기", key="welfare_ask",
+                 type="primary", use_container_width=True):
+        st.session_state["pending_q"] = f"{name} 대상과 신청 방법을 알려줘"
+        st.session_state["tab"] = "talk"
+        st.session_state.pop("welfare", None)
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+_WELFARE_DETAIL_CSS = """<style>
+.wd-card{background:#fff;border:1px solid #e6ebf4;border-radius:20px;padding:26px 26px 18px;
+  box-shadow:0 14px 34px -22px rgba(15,47,111,.35);margin-top:8px}
+.wd-head{display:flex;gap:16px;align-items:center;margin-bottom:16px}
+.wd-ic{font-size:2.2rem;width:64px;height:64px;border-radius:18px;background:#eef3fc;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.wd-title{font-size:1.6rem;font-weight:800;color:#0f2f6f;letter-spacing:-.02em}
+.wd-sum{color:#3d4a63;margin-top:4px;line-height:1.55}
+.wd-why{background:#eaf6ee;border:1px solid #bfe3cb;border-radius:14px;padding:14px 18px;
+  margin:6px 0 14px;color:#14532d}
+.wd-why ul{margin:8px 0 0 0;padding-left:20px}
+.wd-sec{padding:14px 0;border-top:1px solid #eef1f6}
+.wd-h{font-weight:800;color:#0f2f6f;font-size:1.12rem;margin-bottom:6px}
+.wd-sec ul{margin:0;padding-left:22px} .wd-sec li{margin:5px 0;line-height:1.6}
+.wd-sec p{margin:0}
+.wd-addr{color:#6b7891;font-size:.92em}
+.wd-note{margin-top:10px;padding-top:12px;border-top:1px dashed #d8dfeb;color:#6b7891;
+  font-size:.92rem;line-height:1.5}
+@media(max-width:560px){.wd-card{padding:20px 18px 14px}.wd-title{font-size:1.35rem}
+  .wd-ic{width:54px;height:54px;font-size:1.8rem}}
+</style>"""
+
+
 def notice_detail(client, i: int):
     """공지사항 상세 화면 — 제목·날짜·본문 + 목록으로/AI 상담 버튼(챗봇 아님)."""
     if i < 0 or i >= len(NOTICES):
@@ -1430,7 +1535,7 @@ def profile_screen():
 
 def my_welfare_cards():
     """session_state['profile'] 기준으로 '내 맞춤 복지'를 카드로 보여준다.
-    카드를 누르면 ?ask= 로 해당 복지를 AI 도우미에게 바로 물어본다."""
+    카드를 누르면 ?w= 로 해당 복지의 상세 안내 화면(챗봇 아님)을 연다."""
     from urllib.parse import quote
     p = st.session_state.get("profile", {})
     if not _profile_has_info(p):
@@ -1447,9 +1552,8 @@ def my_welfare_cards():
     cards = ""
     for i, r in enumerate(eligible):
         c = palette[i % len(palette)]
-        ask_q = f"{r.welfare.name} 대상과 신청 방법을 알려줘"
         cards += (
-            f'<a class="cat-card" style="--c:{c}" href="{_ask_href(ask_q)}" target="_self">'
+            f'<a class="cat-card" style="--c:{c}" href="{_welfare_href(r.welfare.name)}" target="_self">'
             f'<span class="cat-ic">✅</span>'
             f'<span class="cat-name">{r.welfare.name}</span>'
             f'<span class="cat-desc">{r.welfare.summary}</span>'
@@ -1459,7 +1563,8 @@ def my_welfare_cards():
                  '바로 해당되는 복지를 찾지 못했어요. 정보를 더 입력해 보세요.</div>')
     maybe_html = ""
     if maybe:
-        chips = "".join(f'<span class="chip">{r.welfare.name}</span>' for r in maybe)
+        chips = "".join(f'<a class="chip" href="{_welfare_href(r.welfare.name)}" '
+                        f'target="_self">{r.welfare.name}</a>' for r in maybe)
         maybe_html = ('<p class="sub" style="margin-top:22px">확인하면 받으실 수 있어요</p>'
                       f'<div class="chips">{chips}</div>')
     ps = _profile_summary(p)
@@ -2188,6 +2293,15 @@ def main():
         except Exception:
             pass
 
+    # 맞춤 복지 상세 보기: ?w=<복지 이름> → 상세 화면(챗봇 아님)
+    if "w" in st.query_params:
+        st.session_state["welfare"] = st.query_params["w"]
+        st.session_state["tab"] = "mywelfare"
+        try:
+            del st.query_params["w"]
+        except Exception:
+            pass
+
     # 사이드바는 폰에서 닫힌 채 시작해 어르신이 찾기 어려워 없앴다.
     #  · 글자 크기·고대비·음성 답변 → 왼쪽 위 '⚙️ 글자 크기·설정' 창(_settings_dialog)
     #  · 내 정보·로그아웃 → 머리글 / 새 대화·음성 대화 → AI상담 화면
@@ -2205,6 +2319,9 @@ def main():
 
         if st.session_state.get("notice") is not None:
             notice_detail(client, st.session_state["notice"])   # 공지 상세(챗봇 아님)
+            footer()
+        elif tab == "mywelfare" and st.session_state.get("welfare"):
+            welfare_detail(st.session_state["welfare"])   # 맞춤 복지 상세(챗봇 아님)
             footer()
         elif tab == "mywelfare":
             if _profile_has_info(st.session_state.get("profile", {})):
