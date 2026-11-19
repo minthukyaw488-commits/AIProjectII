@@ -171,3 +171,14 @@ FREQ_DROP_THRESHOLD = 0.5         # recent chat rate <= 50% of baseline -> flag
 SENTIMENT_SHIFT_THRESHOLD = 0.25  # recent avg negativity rose by >= this
 KEYWORD_SHIFT_THRESHOLD = 0.30    # emotional-keyword rate rose by >= this
 LENGTH_DROP_THRESHOLD = 0.5       # recent avg reply length <= 50% of baseline
+
+# --- 관리자(사회복지사) 계정 --------------------------------------------------
+# 이 이름으로 로그인하면 어르신 화면 대신 '전체 어르신 이상신호 모니터'가 열린다.
+# 일반 회원가입으로는 만들 수 없고, 서버에서 scripts/create_admin.py 로만 만든다.
+# 여러 명이면 쉼표로: ADMIN_USERS="관리자,복지사1"
+ADMIN_USERS = tuple(n.strip() for n in os.environ.get("ADMIN_USERS", "관리자").split(",")
+                    if n.strip())
+
+
+def is_admin(name: str) -> bool:
+    return bool(name) and name.strip() in ADMIN_USERS

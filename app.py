@@ -1086,6 +1086,11 @@ def _load_user_session(name: str):
     세션을 되살릴 때 공통으로 쓴다(Streamlit 세션은 reload 시 초기화되므로)."""
     from src import db
     st.session_state["auth_user"] = name
+    st.session_state["is_admin"] = config.is_admin(name)
+    if st.session_state["is_admin"]:
+        # 관리자(사회복지사) 계정: 어르신 프로필·대화 기록 없이 모니터 화면으로 바로 간다.
+        st.session_state["profile_done"] = True
+        return
     try:
         prof = db.get_profile(name)
         if prof:
@@ -1165,7 +1170,7 @@ def _confirm_logout():
 
 def _logout():
     """로그아웃 → 로그인 화면으로. 세션·URL(?u=,?t=) 모두 비워 새 계정으로 로그인 가능."""
-    for k in ("auth_user", "profile", "profile_done", "chat", "pending_q"):
+    for k in ("auth_user", "is_admin", "profile", "profile_done", "chat", "pending_q"):
         st.session_state.pop(k, None)
     st.query_params.clear()
     st.rerun()
@@ -1268,6 +1273,8 @@ def login_screen():
                                               use_container_width=True)
         if submitted:
             ok, msg = db.login_check(name.strip(), pw)
+            if ok and config.is_admin(name) and "미설정" in msg:
+                ok, msg = False, "관리자 계정은 비밀번호가 필요합니다. 서버 담당자에게 문의하세요."
             if ok:
                 _enter(name.strip())
             else:
@@ -1283,6 +1290,8 @@ def login_screen():
         if submitted2:
             if p2 != p3:
                 st.warning("비밀번호가 서로 다릅니다.")
+            elif config.is_admin(n2):
+                st.warning("이 이름은 사용할 수 없습니다. 다른 성함으로 가입해 주세요.")
             else:
                 ok, msg = db.signup(n2.strip(), p2)
                 if ok:
@@ -1981,70 +1990,19 @@ def voice_conversation(client):
         orbset("listen", "듣고 있어요…")
 
 
-def _go_home():
-    # Safe way to change the sidebar radio: set its keyed state in a callback,
-    # before the widget is re-instantiated on the next run.
-    st.session_state["view"] = "대전노인복지HUB (어르신)"
-
-
-def admin_view(client):
+def admin_screen():
+    """관리자(사회복지사) 화면 — 모든 어르신의 이상신호를 DB 에서 읽어 모니터링한다.
+    일반 어르신 계정에는 이 화면으로 가는 메뉴가 없다(관리자 계정으로 로그인해야 보임)."""
+    import html as _html
+    inject_css()
     st.markdown('<div class="gov-wrap sec">', unsafe_allow_html=True)
-    st.button("← 어르신 화면으로 돌아가기", on_click=_go_home, type="primary")
-    st.markdown('<h2>관리자 대시보드 · 이상신호 모니터</h2>'
-                '<p class="sub">어르신 화면에는 보이지 않는 배경 모니터링입니다.</p>',
-                unsafe_allow_html=True)
-
-    # ── 키워드 감지 알림 (아파·불편해·도와줘 등) ──────────────────────────
-    alerts = st.session_state.get("admin_alerts", [])
-    n_crisis = sum(1 for a in alerts if a["level"] == "위기")
-    st.markdown("### 🚨 키워드 감지 알림")
-    a1, a2, a3 = st.columns(3)
-    a1.metric("총 알림", f"{len(alerts)}건")
-    a2.metric("위기", f"{n_crisis}건")
-    a3.metric("주의", f"{len(alerts) - n_crisis}건")
-    if st.button("알림 비우기", key="clear_admin_alerts"):
-        st.session_state["admin_alerts"] = []
-        st.rerun()
-    if alerts:
-        for a in alerts[:30]:
-            cls = "crisis" if a["level"] == "위기" else ""
-            ic = "🆘" if a["level"] == "위기" else "⚠️"
-            st.markdown(
-                f'<div class="warn-banner {cls}" style="align-items:flex-start">'
-                f'<span class="ic">{ic}</span><div>'
-                f'<b>[{a["level"]}] {a["name"]} 님</b> '
-                f'<span style="color:#8493ac;font-size:.9rem">· {a["time"]}'
-                f'{" · 키워드: " + a["keyword"] if a.get("keyword") else ""}</span><br>'
-                f'<span style="font-size:1.06rem">“{a["message"]}”</span>'
-                f'</div></div>', unsafe_allow_html=True)
-    else:
-        st.caption("감지된 키워드 알림이 없습니다.")
-    st.divider()
-
-    s = st.session_state.get("state") or {}
-    c1, c2, c3 = st.columns(3)
-    status = ("긴급 확인" if s.get("crisis") else
-              "주의" if s.get("is_abnormal") else "정상")
-    c1.metric("상태", status)
-    c2.metric("평균 부정감정", f"{s.get('avg_negative', 0.0):.2f}")
-    c3.metric("대화 횟수", f"{s.get('history_len', 0)}회")
-    counts = s.get("symptom_counts", {})
-    if counts:
-        st.write("**반복 호소 증상:** " + ", ".join(f"{k}({v}회)" for k, v in counts.items()))
-    m = s.get("metrics", {})
-    if m:
-        cc = st.columns(4)
-        cc[0].metric("대화 빈도", f"-{m['freq_drop']:.0%}")
-        cc[1].metric("감정 변화", f"+{m['sentiment_shift']:.2f}")
-        cc[2].metric("외로움 표현", f"+{m['keyword_shift']:.0%}")
-        cc[3].metric("응답 길이", f"-{m['length_drop']:.0%}")
-    st.divider()
-    st.markdown("#### 사회복지사 알림 로그")
-    if st.session_state["alerts"]:
-        for urgency, text in st.session_state["alerts"]:
-            st.warning(f"[{urgency}]\n\n{text}")
-    else:
-        st.caption("아직 알림이 없습니다.")
+    h1, h2 = st.columns([5, 1], vertical_alignment="center")
+    h1.markdown(f'<div style="color:#5c6b86;font-weight:700">👤 {_html.escape(st.session_state.get("auth_user", ""))} '
+                '(관리자)</div>', unsafe_allow_html=True)
+    if h2.button("로그아웃", key="admin_logout", use_container_width=True):
+        _confirm_logout()
+    from src.admin_monitor import render
+    render(exclude=config.ADMIN_USERS)
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -2074,6 +2032,9 @@ def main():
     if not st.session_state.get("auth_user"):
         login_screen()
         return
+    if st.session_state.get("is_admin"):
+        admin_screen()               # 관리자(사회복지사) 계정 → 전체 어르신 이상신호 모니터
+        return
     if not st.session_state.get("profile_done"):
         profile_screen()
         return
@@ -2091,7 +2052,6 @@ def main():
         if t in _TABS:
             st.session_state["tab"] = t
             st.session_state.pop("mode", None)          # 음성 모드였으면 일반 화면으로
-            st.session_state["view"] = "대전노인복지HUB (어르신)"
 
     # A category card links to ?u=<성함>&ask=<question>; handle ask, keep u(로그인).
     if "ask" in st.query_params:
@@ -2134,14 +2094,6 @@ def main():
             key="voice_toggle", on_change=_sync_state, args=("voice_toggle", "voice_mode"),
             help=f"로컬 TTS: {get_tts().backend or '사용 불가'}")
         st.divider()
-        view = st.radio("화면", ["대전노인복지HUB (어르신)", "관리자"], key="view")
-        _na = len(st.session_state.get("admin_alerts", []))
-        if _na:
-            st.markdown(f'<div style="background:#fdecec;border:1px solid #f3b4b4;'
-                        f'border-radius:10px;padding:8px 12px;color:#8a1c13;'
-                        f'font-weight:700;font-size:.9rem;margin:-4px 0 6px">'
-                        f'🚨 관리자 알림 {_na}건 — 관리자 화면에서 확인</div>',
-                        unsafe_allow_html=True)
         st.caption("상담 방식")
         if st.button("텍스트·검색", use_container_width=True):
             st.session_state["mode"] = "text"; st.rerun()
@@ -2165,11 +2117,7 @@ def main():
     inject_css()
     inject_pwa()
 
-    if view == "관리자":
-        header_nav(client)
-        admin_view(client)
-        footer()
-    elif st.session_state.get("mode") == "voice":
+    if st.session_state.get("mode") == "voice":
         header_nav(client)
         voice_conversation(client)   # hands-free ChatGPT-style voice loop
     else:
