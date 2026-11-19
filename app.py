@@ -1357,14 +1357,12 @@ def profile_screen():
     st.markdown(_NARROW_FORM_CSS.format(w=660), unsafe_allow_html=True)
     p = st.session_state.get("profile", {})
     user = st.session_state.get("auth_user", "")
-    st.markdown('<div class="gov-wrap sec" style="max-width:620px;margin:5vh auto">',
+    st.markdown('<div class="gov-wrap sec" style="max-width:620px;margin:1vh auto 0">',
                 unsafe_allow_html=True)
     st.markdown(
         '<div style="text-align:center;margin-bottom:12px">'
         '<div class="seal" style="margin:0 auto 12px;width:52px;height:52px;font-size:26px">🧓</div>'
         f'<div style="font-size:23px;font-weight:800;color:#0f2f6f;letter-spacing:-.03em">{user} 님, 반갑습니다</div>'
-        '<span style="display:inline-block;margin-top:12px;font-size:12.5px;font-weight:800;color:#2f6bff;'
-        'background:#f5f8fd;padding:6px 14px;border-radius:999px">2단계 · 내 정보</span>'
         '</div>', unsafe_allow_html=True)
     st.caption("받으실 수 있는 복지를 정확히 찾기 위해 사용됩니다. 모르면 비워두셔도 됩니다.")
     tri = {"모름": None, "예": True, "아니오": False}
