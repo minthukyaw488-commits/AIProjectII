@@ -491,6 +491,7 @@ def inject_css():
     </style>
     """, unsafe_allow_html=True)
     st.markdown(_PAGE_MARGIN_CSS, unsafe_allow_html=True)
+    st.markdown(_NO_EMPTY_GAP_CSS, unsafe_allow_html=True)
     if not hc:                     # 고대비 모드는 자체 흑백 팔레트를 그대로 사용
         st.markdown(_ELDER_CSS, unsafe_allow_html=True)
     st.markdown(_PHONE_TEXT_CSS, unsafe_allow_html=True)   # 폰: 버튼·하단 탭 글씨 16px 이상
@@ -623,6 +624,19 @@ _ELDER_CSS = """
     font-weight:800 !important}
 </style>
 """
+
+# 화면 위쪽의 큰 빈 공간 제거: <style> 만 담은 블록·빈 <div> 블록은 눈에 안 보이지만
+# Streamlit 이 블록마다 간격(약 17px)을 줘서 위쪽이 비어 보였다 → 그런 블록만 숨긴다.
+# (숨겨도 <style> 은 그대로 적용됨. 스크롤 위치용 id 가 있는 블록은 숨기지 않음)
+_MD = '[data-testid="stMarkdownContainer"]'
+_NO_EMPTY_GAP_CSS = (
+    "<style>"
+    f'[data-testid="stElementContainer"]:has({_MD} > style)'
+    f':not(:has({_MD} > :not(style))){{display:none !important}}'
+    f'[data-testid="stElementContainer"]:has({_MD} > div:empty:only-child)'
+    f':not(:has([id])){{display:none !important}}'
+    '.block-container{padding-top:12px !important}'
+    "</style>")
 
 # 로그인·내 정보 화면은 폼이 너무 넓게 퍼지지 않도록 가운데 좁은 폭으로.
 _NARROW_FORM_CSS = "<style>" + _BODY + "{{max-width:{w}px !important}}</style>"
