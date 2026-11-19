@@ -1390,15 +1390,13 @@ def login_screen():
     """1단계 — 로그인(성함 기반, 프로토타입). 성공하면 auth_user 설정."""
     inject_css()
     st.markdown(_NARROW_FORM_CSS.format(w=520), unsafe_allow_html=True)
-    st.markdown('<div class="gov-wrap sec" style="max-width:500px;margin:7vh auto">',
+    st.markdown('<div class="gov-wrap sec" style="max-width:500px;margin:2vh auto 0">',
                 unsafe_allow_html=True)
     st.markdown(
         '<div style="text-align:center;margin-bottom:10px">'
         '<div class="seal" style="margin:0 auto 14px;width:58px;height:58px;font-size:30px">🏠</div>'
         '<div style="font-size:26px;font-weight:800;color:#0f2f6f;letter-spacing:-.03em">대전노인복지 HUB</div>'
         '<div style="color:#5c6b86;font-size:14px;margin-top:4px">대전광역시 · 어르신 복지 AI</div>'
-        '<span style="display:inline-block;margin-top:15px;font-size:12.5px;font-weight:800;color:#2f6bff;'
-        'background:#f5f8fd;padding:6px 14px;border-radius:999px">1단계 · 로그인</span>'
         '</div>', unsafe_allow_html=True)
     from src import db
 
