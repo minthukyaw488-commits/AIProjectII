@@ -1371,7 +1371,9 @@ def profile_screen():
 
     if not editing:                                   # ── 보기 화면(고칠 수 없음) ──
         rows = [("나이", f"만 {p['age']}세" if p.get("age") is not None else "입력 안 함"),
-                ("사시는 구", p.get("district") or "입력 안 함")]
+                ("성별", p.get("gender") or "입력 안 함"),
+                ("사시는 구", p.get("district") or "입력 안 함"),
+                ("연락처", p.get("phone") or "입력 안 함")]
         rows += [(label, rev[p.get(key)]) for key, label in _PROFILE_YN]
         import html as _h
         st.markdown('<div class="pf-card">' + "".join(
@@ -1396,9 +1398,14 @@ def profile_screen():
     opts = ["예", "아니오", "모름"]
     age_s = st.text_input("나이 (만)", value="" if p.get("age") is None else str(p["age"]),
                           placeholder="예: 72")
+    genders = ["남성", "여성", "선택 안 함"]
+    gi = genders.index(p["gender"]) if p.get("gender") in genders else len(genders) - 1
+    gender = st.radio("성별", genders, index=gi, horizontal=True, key="pf_gender")
     districts = ["동구", "중구", "서구", "유성구", "대덕구", "선택 안 함"]
     di = districts.index(p["district"]) if p.get("district") in districts else len(districts) - 1
     district = st.radio("사시는 구", districts, index=di, horizontal=True, key="pf_district")
+    phone_s = st.text_input("연락처 (선택)", value=p.get("phone") or "", placeholder="예: 010-1234-5678",
+                            help="담당 사회복지사가 안부를 여쭐 때 쓰입니다. 적지 않으셔도 됩니다.")
     ans = {key: st.radio(label, opts, index=opts.index(rev[p.get(key)]), horizontal=True,
                          key=f"pf_{key}")
            for key, label in _PROFILE_YN}
@@ -1416,7 +1423,11 @@ def profile_screen():
             age = int(age_s) if age_s.strip() else None
         except ValueError:
             age = None
+        import re as _re
+        _digits = _re.sub(r"\D", "", phone_s or "")
+        phone = phone_s.strip() if 9 <= len(_digits) <= 11 else None   # 숫자 9~11자리만 저장
         prof = {"age": age, "district": None if district == "선택 안 함" else district,
+                "gender": None if gender == "선택 안 함" else gender, "phone": phone,
                 **{k: tri[v] for k, v in ans.items()}}
         st.session_state["profile"] = prof
         st.session_state["profile_done"] = True
@@ -1473,7 +1484,9 @@ def my_welfare_cards():
         return
     try:
         from src.welfare_rules import Profile, recommend
-        eligible, maybe, _ = recommend(Profile(**p))
+        import dataclasses
+        _f = {f.name for f in dataclasses.fields(Profile)}   # 성별·연락처 등 다른 항목은 제외
+        eligible, maybe, _ = recommend(Profile(**{k: v for k, v in p.items() if k in _f}))
     except Exception:
         return
     user = st.session_state.get("auth_user", "어르신")
