@@ -1370,12 +1370,9 @@ def profile_screen():
     rev = {None: "모름", True: "예", False: "아니오"}
 
     if not editing:                                   # ── 보기 화면(고칠 수 없음) ──
-        rows = [("나이(만)", f"{p['age']}세" if p.get("age") is not None else "입력 안 함"),
-                ("거주 구", p.get("district") or "입력 안 함"),
-                ("저소득(기초수급 등)", rev[p.get("income_low")]),
-                ("독거(혼자 거주)", rev[p.get("living_alone")]),
-                ("거동 불편", rev[p.get("mobility_issue")]),
-                ("만성질환·기억력 저하", rev[p.get("chronic_illness")])]
+        rows = [("나이", f"만 {p['age']}세" if p.get("age") is not None else "입력 안 함"),
+                ("사시는 구", p.get("district") or "입력 안 함")]
+        rows += [(label, rev[p.get(key)]) for key, label in _PROFILE_YN]
         import html as _h
         st.markdown('<div class="pf-card">' + "".join(
             f'<div class="pf-row"><span>{_h.escape(k)}</span><b>{_h.escape(v)}</b></div>'
@@ -1391,22 +1388,20 @@ def profile_screen():
         return
 
     # ── 입력/수정 화면 ────────────────────────────────────────────
-    st.caption("받으실 수 있는 복지를 정확히 찾기 위해 사용됩니다. 모르면 비워두셔도 됩니다.")
+    # 드롭다운(두 번 눌러야 하고 글씨가 작음) 대신 한 번에 누르는 큰 [예][아니오][모름] 버튼
+    st.caption("받으실 수 있는 복지를 찾는 데 쓰입니다. 모르시면 '모름'으로 두셔도 됩니다.")
+    st.markdown(_PROFILE_RADIO_CSS, unsafe_allow_html=True)
     tri = {"모름": None, "예": True, "아니오": False}
     rev = {None: "모름", True: "예", False: "아니오"}
-    c1, c2 = st.columns(2)
-    age_s = c1.text_input("나이(만)", value="" if p.get("age") is None else str(p["age"]))
-    districts = ["선택 안 함", "동구", "중구", "서구", "유성구", "대덕구"]
-    di = districts.index(p["district"]) if p.get("district") in districts else 0
-    district = c2.selectbox("거주 구", districts, index=di)
-    income = c1.selectbox("저소득(기초수급 등)", ["모름", "예", "아니오"],
-                          index=["모름", "예", "아니오"].index(rev[p.get("income_low")]))
-    alone = c2.selectbox("독거(혼자 거주)", ["모름", "예", "아니오"],
-                         index=["모름", "예", "아니오"].index(rev[p.get("living_alone")]))
-    mob = c1.selectbox("거동 불편", ["모름", "예", "아니오"],
-                       index=["모름", "예", "아니오"].index(rev[p.get("mobility_issue")]))
-    ill = c2.selectbox("만성질환·기억력 저하", ["모름", "예", "아니오"],
-                       index=["모름", "예", "아니오"].index(rev[p.get("chronic_illness")]))
+    opts = ["예", "아니오", "모름"]
+    age_s = st.text_input("나이 (만)", value="" if p.get("age") is None else str(p["age"]),
+                          placeholder="예: 72")
+    districts = ["동구", "중구", "서구", "유성구", "대덕구", "선택 안 함"]
+    di = districts.index(p["district"]) if p.get("district") in districts else len(districts) - 1
+    district = st.radio("사시는 구", districts, index=di, horizontal=True, key="pf_district")
+    ans = {key: st.radio(label, opts, index=opts.index(rev[p.get(key)]), horizontal=True,
+                         key=f"pf_{key}")
+           for key, label in _PROFILE_YN}
     b1, b2 = st.columns(2)
     if has_saved:
         if b1.button("취소", use_container_width=True, key="pf_cancel"):
@@ -1422,8 +1417,7 @@ def profile_screen():
         except ValueError:
             age = None
         prof = {"age": age, "district": None if district == "선택 안 함" else district,
-                "income_low": tri[income], "living_alone": tri[alone],
-                "mobility_issue": tri[mob], "chronic_illness": tri[ill]}
+                **{k: tri[v] for k, v in ans.items()}}
         st.session_state["profile"] = prof
         st.session_state["profile_done"] = True
         st.session_state["profile_edit"] = False
@@ -1436,6 +1430,27 @@ def profile_screen():
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
+
+# 내 정보 질문(어르신이 알아듣기 쉬운 말로) — 저장 키는 그대로
+_PROFILE_YN = [("living_alone", "혼자 사시나요?"),
+               ("income_low", "기초생활수급자이신가요?"),
+               ("mobility_issue", "거동이 불편하신가요?"),
+               ("chronic_illness", "만성질환·기억력 저하가 있으신가요?")]
+
+# [예][아니오][모름]·구 선택을 손가락으로 누르기 쉬운 큰 버튼처럼
+_PROFILE_RADIO_CSS = """
+<style>
+  [data-testid="stRadio"] > label p, [data-testid="stWidgetLabel"] p{font-size:1.1rem !important;
+    font-weight:700; color:#1c2430}
+  [data-testid="stRadio"] [role="radiogroup"]{gap:8px !important; flex-wrap:wrap}
+  [data-testid="stRadio"] label[data-testid="stRadioOption"]{border:2px solid #b9b3a4; border-radius:12px;
+    padding:8px 16px 8px 10px; background:#fff; margin:0 !important; min-height:48px;
+    align-items:center}
+  [data-testid="stRadio"] label[data-testid="stRadioOption"]:is([data-selected],:has(input:checked)){border-color:#1e3a8a;
+    background:#eef3ff}
+  [data-testid="stRadio"] label[data-testid="stRadioOption"] p{font-size:1.08rem !important}
+</style>
+"""
 
 _PROFILE_VIEW_CSS = """
 <style>
