@@ -143,6 +143,14 @@ def inject_css():
       @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
 
       #MainMenu, header[data-testid="stHeader"], footer {{visibility:hidden; height:0}}
+      /* 헤더는 숨기되, 닫은 사이드바(설정·관리자 화면)를 다시 여는 버튼은 보이게 —
+         예전엔 헤더와 함께 숨겨져 한 번 닫으면 새로고침 전까지 다시 열 수 없었다. */
+      header[data-testid="stHeader"] [data-testid="stExpandSidebarButton"]{{
+        visibility:visible !important; position:fixed; top:10px; left:10px; z-index:10000;
+        background:#ffffff; border:2px solid {navy}; border-radius:12px;
+        width:48px; height:48px; box-shadow:0 4px 14px -6px rgba(16,35,61,.45)}}
+      header[data-testid="stHeader"] [data-testid="stExpandSidebarButton"] *{{
+        visibility:visible !important; color:{navy} !important}}
       .block-container{{padding:0 !important; max-width:100% !important}}
       .stApp{{background:{bg}}}
       html, body, [class*="css"], .stApp{{font-size:{base}px;
@@ -485,6 +493,47 @@ def inject_css():
     if not hc:                     # 고대비 모드는 자체 흑백 팔레트를 그대로 사용
         st.markdown(_ELDER_CSS, unsafe_allow_html=True)
     st.markdown(_PHONE_TEXT_CSS, unsafe_allow_html=True)   # 폰: 버튼·하단 탭 글씨 16px 이상
+    # 움직임(애니메이션): 고대비 모드에서는 끄고, 기기의 '동작 줄이기' 설정도 존중한다.
+    st.markdown(_NO_MOTION_CSS if hc else _MOTION_CSS, unsafe_allow_html=True)
+
+
+# ── UI 애니메이션 — 어르신용이라 느리고 부드럽게(0.2~0.4초), 깜빡임 없음 ─────────────
+#  ① 새 말풍선 부드럽게 등장(마지막 두 개만 — 지난 대화가 매번 다시 움직이지 않게)
+#  ② 답변 준비 중 '점 세 개' 표시(아래 _TYPING_HTML)
+#  ③ 버튼을 누르면 살짝 눌리는 느낌
+#  ④ 맞춤복지 카드 순서대로 등장(기존 fadeUp, 9장까지 지연)
+#  ⑤ 위기 안내 배너: 2.4초 주기의 은은한 테두리 빛(초당 3회 이상 깜빡임 금지 기준 준수)
+#  기기 설정 '동작 줄이기(prefers-reduced-motion)'면 모든 움직임을 끈다.
+_MOTION_CSS = """
+<style>
+  @keyframes bubIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+  @keyframes dotJump{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-6px);opacity:1}}
+  @keyframes softGlow{0%,100%{box-shadow:0 0 0 0 rgba(176,0,32,0)}50%{box-shadow:0 0 0 6px rgba(176,0,32,.18)}}
+  .chat .row:nth-last-child(-n+2) .bub, .bub-label{animation:bubIn .35s ease-out both}
+  .bub.typing{display:inline-flex; align-items:center; gap:10px; color:#5c6b86}
+  .bub.typing .dots i{display:inline-block; width:9px; height:9px; margin:0 2px; border-radius:50%;
+    background:#2f6bff; animation:dotJump 1.2s ease-in-out infinite}
+  .bub.typing .dots i:nth-child(2){animation-delay:.15s}
+  .bub.typing .dots i:nth-child(3){animation-delay:.3s}
+  .stApp div[data-testid="stButton"] > button,
+  .stApp div[data-testid="stFormSubmitButton"] > button{transition:transform .12s ease, box-shadow .12s ease}
+  .stApp div[data-testid="stButton"] > button:active,
+  .stApp div[data-testid="stFormSubmitButton"] > button:active{transform:scale(.96)}
+  .stApp .st-key-htnav div[data-testid="stButton"] > button:active{transform:scale(.92) !important}
+  .cat-card:nth-child(7){animation-delay:.3s} .cat-card:nth-child(8){animation-delay:.35s}
+  .cat-card:nth-child(9){animation-delay:.4s}
+  .warn-banner.crisis{animation:softGlow 2.4s ease-in-out infinite}
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{animation:none !important; transition:none !important}
+  }
+</style>
+"""
+_NO_MOTION_CSS = """
+<style>*, *::before, *::after{animation:none !important; transition:none !important}</style>
+"""
+_TYPING_HTML = ('<div class="chat" style="padding:2px 0"><div class="row l">'
+                '<div class="bub bot typing"><span class="dots"><i></i><i></i><i></i></span>'
+                '답변을 준비하고 있어요</div></div></div>')
 
 
 # 폰(640px 이하)에서 버튼·하단 탭·접기 메뉴 글씨가 14.9px 등 16px 보다 작아지던 문제.
@@ -831,7 +880,7 @@ def _source_caption(sources) -> str:
     return ("📚 Source: " + ", ".join(seen[:3])) if seen else ""
 
 
-def _answer_for(client, q: str, attach: str | None = None):
+def _answer_for(client, q: str, attach: str | None = None, spinner: bool = True):
     """질문 → 결과 dict. 인사/프로필/오류/저장·알림 처리(채팅 append 는 호출부에서).
     attach: 업로드한 사진·문서에서 읽은 글자(있으면 답변 근거로 함께 전달). 실패 시 None."""
     if is_crisis(q):
@@ -856,7 +905,9 @@ def _answer_for(client, q: str, attach: str | None = None):
         # 맞춤형: 프로필은 질문에 붙이지 않고 RAG 체인의 '시스템 프롬프트'로 전달한다
         # (나이·거주지·건강 반영 + 나이 자격 안내). 질문 원문은 깔끔하게 유지.
         prof = p if _profile_has_info(p) else None
-        with st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…"):
+        import contextlib
+        with (st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…") if spinner
+              else contextlib.nullcontext()):
             r = (client.ask(q_send, profile=prof) if st.session_state.get("use_rag", True)
                  else client.ask_norag(q_send))
         if "error" in r:
@@ -974,7 +1025,12 @@ def ask_and_stream(client, q: str, attach: str | None = None):
     _bubble("user", q)
     if attach:
         st.caption("📎 올려 주신 사진·문서를 읽어서 참고했어요.")
-    r = _answer_for(client, q, attach=attach)
+    typing = st.empty()
+    typing.markdown(_TYPING_HTML, unsafe_allow_html=True)   # ② 답변 준비 중 '점 세 개'
+    try:
+        r = _answer_for(client, q, attach=attach, spinner=False)
+    finally:
+        typing.empty()
     if not r:
         return
     _record_signal(q, r)        # 이상신호 기록(키워드+대화분석 합쳐 메시지당 1건)
@@ -1052,15 +1108,17 @@ def ask_audio(client, wav: bytes):
 #   질문에 짧은 프로필 메모를 덧붙인다. 모두 선택 사항이라 비워두면 기존과 동일.
 # --------------------------------------------------------------------------
 def _profile_summary(p: dict) -> str:
-    def yn(v):
-        return "예" if v is True else ("아니오" if v is False else "모름")
+    """프로필 한 줄 요약 — '예'인 항목만 이름으로 적는다('아니오'·'모름'은 생략).
+    예) 나이 80세, 대전 서구 거주, 저소득, 혼자 거주, 거동 불편"""
     out = []
     if p.get("age") is not None:
         out.append(f"나이 {p['age']}세")
     if p.get("district"):
         out.append(f"대전 {p['district']} 거주")
-    out += [f"저소득 {yn(p.get('income_low'))}", f"독거 {yn(p.get('living_alone'))}",
-            f"거동불편 {yn(p.get('mobility_issue'))}", f"만성질환 {yn(p.get('chronic_illness'))}"]
+    for key, label in (("income_low", "저소득"), ("living_alone", "혼자 거주"),
+                       ("mobility_issue", "거동 불편"), ("chronic_illness", "만성질환")):
+        if p.get(key) is True:
+            out.append(label)
     return ", ".join(out)
 
 
@@ -1076,6 +1134,11 @@ def _load_user_session(name: str):
     세션을 되살릴 때 공통으로 쓴다(Streamlit 세션은 reload 시 초기화되므로)."""
     from src import db
     st.session_state["auth_user"] = name
+    st.session_state["is_admin"] = config.is_admin(name)
+    if st.session_state["is_admin"]:
+        # 관리자(사회복지사) 계정: 어르신 프로필·대화 기록 없이 모니터 화면으로 바로 간다.
+        st.session_state["profile_done"] = True
+        return
     try:
         prof = db.get_profile(name)
         if prof:
@@ -1155,7 +1218,7 @@ def _confirm_logout():
 
 def _logout():
     """로그아웃 → 로그인 화면으로. 세션·URL(?u=,?t=) 모두 비워 새 계정으로 로그인 가능."""
-    for k in ("auth_user", "profile", "profile_done", "chat", "pending_q"):
+    for k in ("auth_user", "is_admin", "profile", "profile_done", "chat", "pending_q"):
         st.session_state.pop(k, None)
     st.query_params.clear()
     st.rerun()
@@ -1258,6 +1321,8 @@ def login_screen():
                                               use_container_width=True)
         if submitted:
             ok, msg = db.login_check(name.strip(), pw)
+            if ok and config.is_admin(name) and "미설정" in msg:
+                ok, msg = False, "관리자 계정은 비밀번호가 필요합니다. 서버 담당자에게 문의하세요."
             if ok:
                 _enter(name.strip())
             else:
@@ -1273,6 +1338,8 @@ def login_screen():
         if submitted2:
             if p2 != p3:
                 st.warning("비밀번호가 서로 다릅니다.")
+            elif config.is_admin(n2):
+                st.warning("이 이름은 사용할 수 없습니다. 다른 성함으로 가입해 주세요.")
             else:
                 ok, msg = db.signup(n2.strip(), p2)
                 if ok:
@@ -1369,10 +1436,12 @@ def my_welfare_cards():
         chips = "".join(f'<span class="chip">{r.welfare.name}</span>' for r in maybe)
         maybe_html = ('<p class="sub" style="margin-top:22px">확인하면 받으실 수 있어요</p>'
                       f'<div class="chips">{chips}</div>')
+    ps = _profile_summary(p)
+    info = f"({ps})" if ps else ""          # '예'인 항목만 — 하나도 없으면 괄호 생략
     st.markdown(
         '<div class="sec" id="mywelfare"><div class="gov-wrap">'
         f'<h2>{user} 님 맞춤 복지</h2>'
-        f'<p class="sub">입력하신 정보({_profile_summary(p)})로 받으실 수 있는 복지입니다. '
+        f'<p class="sub">입력하신 정보{info}로 받으실 수 있는 복지입니다. '
         '카드를 누르면 자세히 안내해 드려요. · 정확한 기준은 주민센터 확인</p>'
         f'<div class="cat-grid">{cards}</div>'
         f'{maybe_html}'
@@ -1991,70 +2060,19 @@ def voice_conversation(client):
         orbset("listen", "듣고 있어요…")
 
 
-def _go_home():
-    # Safe way to change the sidebar radio: set its keyed state in a callback,
-    # before the widget is re-instantiated on the next run.
-    st.session_state["view"] = "대전노인복지HUB (어르신)"
-
-
-def admin_view(client):
+def admin_screen():
+    """관리자(사회복지사) 화면 — 모든 어르신의 이상신호를 DB 에서 읽어 모니터링한다.
+    일반 어르신 계정에는 이 화면으로 가는 메뉴가 없다(관리자 계정으로 로그인해야 보임)."""
+    import html as _html
+    inject_css()
     st.markdown('<div class="gov-wrap sec">', unsafe_allow_html=True)
-    st.button("← 어르신 화면으로 돌아가기", on_click=_go_home, type="primary")
-    st.markdown('<h2>관리자 대시보드 · 이상신호 모니터</h2>'
-                '<p class="sub">어르신 화면에는 보이지 않는 배경 모니터링입니다.</p>',
-                unsafe_allow_html=True)
-
-    # ── 키워드 감지 알림 (아파·불편해·도와줘 등) ──────────────────────────
-    alerts = st.session_state.get("admin_alerts", [])
-    n_crisis = sum(1 for a in alerts if a["level"] == "위기")
-    st.markdown("### 🚨 키워드 감지 알림")
-    a1, a2, a3 = st.columns(3)
-    a1.metric("총 알림", f"{len(alerts)}건")
-    a2.metric("위기", f"{n_crisis}건")
-    a3.metric("주의", f"{len(alerts) - n_crisis}건")
-    if st.button("알림 비우기", key="clear_admin_alerts"):
-        st.session_state["admin_alerts"] = []
-        st.rerun()
-    if alerts:
-        for a in alerts[:30]:
-            cls = "crisis" if a["level"] == "위기" else ""
-            ic = "🆘" if a["level"] == "위기" else "⚠️"
-            st.markdown(
-                f'<div class="warn-banner {cls}" style="align-items:flex-start">'
-                f'<span class="ic">{ic}</span><div>'
-                f'<b>[{a["level"]}] {a["name"]} 님</b> '
-                f'<span style="color:#8493ac;font-size:.9rem">· {a["time"]}'
-                f'{" · 키워드: " + a["keyword"] if a.get("keyword") else ""}</span><br>'
-                f'<span style="font-size:1.06rem">“{a["message"]}”</span>'
-                f'</div></div>', unsafe_allow_html=True)
-    else:
-        st.caption("감지된 키워드 알림이 없습니다.")
-    st.divider()
-
-    s = st.session_state.get("state") or {}
-    c1, c2, c3 = st.columns(3)
-    status = ("긴급 확인" if s.get("crisis") else
-              "주의" if s.get("is_abnormal") else "정상")
-    c1.metric("상태", status)
-    c2.metric("평균 부정감정", f"{s.get('avg_negative', 0.0):.2f}")
-    c3.metric("대화 횟수", f"{s.get('history_len', 0)}회")
-    counts = s.get("symptom_counts", {})
-    if counts:
-        st.write("**반복 호소 증상:** " + ", ".join(f"{k}({v}회)" for k, v in counts.items()))
-    m = s.get("metrics", {})
-    if m:
-        cc = st.columns(4)
-        cc[0].metric("대화 빈도", f"-{m['freq_drop']:.0%}")
-        cc[1].metric("감정 변화", f"+{m['sentiment_shift']:.2f}")
-        cc[2].metric("외로움 표현", f"+{m['keyword_shift']:.0%}")
-        cc[3].metric("응답 길이", f"-{m['length_drop']:.0%}")
-    st.divider()
-    st.markdown("#### 사회복지사 알림 로그")
-    if st.session_state["alerts"]:
-        for urgency, text in st.session_state["alerts"]:
-            st.warning(f"[{urgency}]\n\n{text}")
-    else:
-        st.caption("아직 알림이 없습니다.")
+    h1, h2 = st.columns([5, 1], vertical_alignment="center")
+    h1.markdown(f'<div style="color:#5c6b86;font-weight:700">👤 {_html.escape(st.session_state.get("auth_user", ""))} '
+                '(관리자)</div>', unsafe_allow_html=True)
+    if h2.button("로그아웃", key="admin_logout", use_container_width=True):
+        _confirm_logout()
+    from src.admin_monitor import render
+    render(exclude=config.ADMIN_USERS)
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -2084,6 +2102,9 @@ def main():
     if not st.session_state.get("auth_user"):
         login_screen()
         return
+    if st.session_state.get("is_admin"):
+        admin_screen()               # 관리자(사회복지사) 계정 → 전체 어르신 이상신호 모니터
+        return
     if not st.session_state.get("profile_done"):
         profile_screen()
         return
@@ -2101,7 +2122,6 @@ def main():
         if t in _TABS:
             st.session_state["tab"] = t
             st.session_state.pop("mode", None)          # 음성 모드였으면 일반 화면으로
-            st.session_state["view"] = "대전노인복지HUB (어르신)"
 
     # A category card links to ?u=<성함>&ask=<question>; handle ask, keep u(로그인).
     if "ask" in st.query_params:
@@ -2144,14 +2164,6 @@ def main():
             key="voice_toggle", on_change=_sync_state, args=("voice_toggle", "voice_mode"),
             help=f"로컬 TTS: {get_tts().backend or '사용 불가'}")
         st.divider()
-        view = st.radio("화면", ["대전노인복지HUB (어르신)", "관리자"], key="view")
-        _na = len(st.session_state.get("admin_alerts", []))
-        if _na:
-            st.markdown(f'<div style="background:#fdecec;border:1px solid #f3b4b4;'
-                        f'border-radius:10px;padding:8px 12px;color:#8a1c13;'
-                        f'font-weight:700;font-size:.9rem;margin:-4px 0 6px">'
-                        f'🚨 관리자 알림 {_na}건 — 관리자 화면에서 확인</div>',
-                        unsafe_allow_html=True)
         st.caption("상담 방식")
         if st.button("텍스트·검색", use_container_width=True):
             st.session_state["mode"] = "text"; st.rerun()
@@ -2175,11 +2187,7 @@ def main():
     inject_css()
     inject_pwa()
 
-    if view == "관리자":
-        header_nav(client)
-        admin_view(client)
-        footer()
-    elif st.session_state.get("mode") == "voice":
+    if st.session_state.get("mode") == "voice":
         header_nav(client)
         voice_conversation(client)   # hands-free ChatGPT-style voice loop
     else:
