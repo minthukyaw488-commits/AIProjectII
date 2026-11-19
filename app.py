@@ -143,6 +143,14 @@ def inject_css():
       @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
 
       #MainMenu, header[data-testid="stHeader"], footer {{visibility:hidden; height:0}}
+      /* 헤더는 숨기되, 닫은 사이드바(설정·관리자 화면)를 다시 여는 버튼은 보이게 —
+         예전엔 헤더와 함께 숨겨져 한 번 닫으면 새로고침 전까지 다시 열 수 없었다. */
+      header[data-testid="stHeader"] [data-testid="stExpandSidebarButton"]{{
+        visibility:visible !important; position:fixed; top:10px; left:10px; z-index:10000;
+        background:#ffffff; border:2px solid {navy}; border-radius:12px;
+        width:48px; height:48px; box-shadow:0 4px 14px -6px rgba(16,35,61,.45)}}
+      header[data-testid="stHeader"] [data-testid="stExpandSidebarButton"] *{{
+        visibility:visible !important; color:{navy} !important}}
       .block-container{{padding:0 !important; max-width:100% !important}}
       .stApp{{background:{bg}}}
       html, body, [class*="css"], .stApp{{font-size:{base}px;
