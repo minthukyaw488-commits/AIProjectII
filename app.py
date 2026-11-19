@@ -1352,11 +1352,14 @@ def login_screen():
 
 
 def profile_screen():
-    """2단계 — 내 정보 입력. 저장하면 profile_done 설정 후 포털로."""
+    """내 정보 — 저장된 정보가 있으면 먼저 '보기' 화면(실수로 바뀌지 않게)을 보여 주고,
+    '✏️ 내 정보 수정'을 눌러야 고칠 수 있다. 처음 가입한 분은 바로 입력 화면."""
     inject_css()
-    st.markdown(_NARROW_FORM_CSS.format(w=660), unsafe_allow_html=True)
-    p = st.session_state.get("profile", {})
+    st.markdown(_NARROW_FORM_CSS.format(w=660) + _PROFILE_VIEW_CSS, unsafe_allow_html=True)
+    p = st.session_state.get("profile") or {}
     user = st.session_state.get("auth_user", "")
+    has_saved = any(v is not None for v in p.values())
+    editing = st.session_state.get("profile_edit", not has_saved)
     st.markdown('<div class="gov-wrap sec" style="max-width:620px;margin:1vh auto 0">',
                 unsafe_allow_html=True)
     st.markdown(
@@ -1364,6 +1367,30 @@ def profile_screen():
         '<div class="seal" style="margin:0 auto 12px;width:52px;height:52px;font-size:26px">🧓</div>'
         f'<div style="font-size:23px;font-weight:800;color:#0f2f6f;letter-spacing:-.03em">{user} 님, 반갑습니다</div>'
         '</div>', unsafe_allow_html=True)
+    rev = {None: "모름", True: "예", False: "아니오"}
+
+    if not editing:                                   # ── 보기 화면(고칠 수 없음) ──
+        rows = [("나이(만)", f"{p['age']}세" if p.get("age") is not None else "입력 안 함"),
+                ("거주 구", p.get("district") or "입력 안 함"),
+                ("저소득(기초수급 등)", rev[p.get("income_low")]),
+                ("독거(혼자 거주)", rev[p.get("living_alone")]),
+                ("거동 불편", rev[p.get("mobility_issue")]),
+                ("만성질환·기억력 저하", rev[p.get("chronic_illness")])]
+        import html as _h
+        st.markdown('<div class="pf-card">' + "".join(
+            f'<div class="pf-row"><span>{_h.escape(k)}</span><b>{_h.escape(v)}</b></div>'
+            for k, v in rows) + '</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        if c1.button("← 돌아가기", use_container_width=True, key="pf_back"):
+            st.session_state["profile_done"] = True
+            st.rerun()
+        if c2.button("✏️ 내 정보 수정", type="primary", use_container_width=True, key="pf_edit"):
+            st.session_state["profile_edit"] = True
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        return
+
+    # ── 입력/수정 화면 ────────────────────────────────────────────
     st.caption("받으실 수 있는 복지를 정확히 찾기 위해 사용됩니다. 모르면 비워두셔도 됩니다.")
     tri = {"모름": None, "예": True, "아니오": False}
     rev = {None: "모름", True: "예", False: "아니오"}
@@ -1380,7 +1407,16 @@ def profile_screen():
                        index=["모름", "예", "아니오"].index(rev[p.get("mobility_issue")]))
     ill = c2.selectbox("만성질환·기억력 저하", ["모름", "예", "아니오"],
                        index=["모름", "예", "아니오"].index(rev[p.get("chronic_illness")]))
-    if st.button("저장하고 시작하기", type="primary", use_container_width=True):
+    b1, b2 = st.columns(2)
+    if has_saved:
+        if b1.button("취소", use_container_width=True, key="pf_cancel"):
+            st.session_state["profile_edit"] = False
+            st.rerun()
+    elif b1.button("나중에 입력하기", use_container_width=True, key="pf_skip"):
+        st.session_state["profile_done"] = True
+        st.rerun()
+    if b2.button("저장" if has_saved else "저장하고 시작하기", type="primary",
+                 use_container_width=True, key="pf_save"):
         try:
             age = int(age_s) if age_s.strip() else None
         except ValueError:
@@ -1390,6 +1426,7 @@ def profile_screen():
                 "mobility_issue": tri[mob], "chronic_illness": tri[ill]}
         st.session_state["profile"] = prof
         st.session_state["profile_done"] = True
+        st.session_state["profile_edit"] = False
         # 저장(MySQL 또는 파일 — 민감정보라 json 산출물은 .gitignore)
         try:
             from src import db
@@ -1398,6 +1435,18 @@ def profile_screen():
             pass
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+_PROFILE_VIEW_CSS = """
+<style>
+  .pf-card{background:#fff; border:2px solid #d9d4c7; border-radius:16px; padding:6px 16px;
+    margin-bottom:14px}
+  .pf-row{display:flex; justify-content:space-between; gap:12px; padding:12px 0;
+    border-bottom:1px solid #ece8df; font-size:1.08rem}
+  .pf-row:last-child{border-bottom:0}
+  .pf-row span{color:#3d4655} .pf-row b{color:#1c2430; text-align:right}
+</style>
+"""
 
 
 def my_welfare_cards():
