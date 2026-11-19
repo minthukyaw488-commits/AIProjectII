@@ -1211,6 +1211,48 @@ def _verify_user_token(name: str, tok: str) -> bool:
     return hmac.compare_digest(_user_token(name), tok)
 
 
+_LOGIN_COOKIE = "whub_login"
+_LOGIN_COOKIE_DAYS = 30
+
+_REMEMBER_HELP = (
+    '<div class="remember-help">체크하시면 다음에 다시 들어오실 때 '
+    '<b>성함과 비밀번호를 넣지 않아도</b> 바로 들어가집니다. (30일 동안)<br>'
+    '⚠️ 복지관·가족이 함께 쓰는 컴퓨터에서는 체크하지 마세요.</div>'
+    '<style>.remember-help{font-size:.95rem; line-height:1.6; color:#3d4655; background:#fff;'
+    'border:1px solid #d9d4c7; border-radius:12px; padding:10px 14px; margin:-6px 0 12px}'
+    '[data-testid="stCheckbox"] label p{font-size:1.08rem !important; font-weight:700}</style>')
+
+
+def _read_login_cookie():
+    """브라우저 쿠키의 (성함, 서명토큰). 없거나 형식이 틀리면 None."""
+    from urllib.parse import unquote
+    try:
+        raw = st.context.cookies.get(_LOGIN_COOKIE)
+    except Exception:
+        return None
+    if not raw or "|" not in unquote(raw):
+        return None
+    name, tok = unquote(raw).rsplit("|", 1)
+    return (name, tok) if name and tok else None
+
+
+def _write_login_cookie(name):
+    """'로그인 상태 유지' 쿠키 저장(name) 또는 삭제(None). 값은 성함|서명토큰(비밀번호 아님)."""
+    import json
+    import time
+    import streamlit.components.v1 as components
+    if name:
+        val = json.dumps(f"{name}|{_user_token(name)}")
+        age = _LOGIN_COOKIE_DAYS * 24 * 3600
+    else:
+        val, age = '""', 0
+    components.html(
+        f"<!-- {time.time_ns()} --><script>try{{var w=window.parent;"
+        f"w.document.cookie='{_LOGIN_COOKIE}='+encodeURIComponent({val})+"
+        f"'; max-age={age}; path=/; SameSite=Lax'+(w.location.protocol==='https:'?'; Secure':'');"
+        "}catch(e){}</script>", height=0)
+
+
 def _set_login_params(name: str):
     """로그인 유지용 URL 파라미터 설정: ?u=성함 &t=서명토큰."""
     st.query_params["u"] = name
@@ -1260,6 +1302,8 @@ def _confirm_logout():
 
 def _logout():
     """로그아웃 → 로그인 화면으로. 세션·URL(?u=,?t=) 모두 비워 새 계정으로 로그인 가능."""
+    st.session_state["clear_login_cookie"] = True   # '로그인 상태 유지' 쿠키도 지움
+    st.session_state["logged_out"] = True
     for k in ("auth_user", "is_admin", "profile", "profile_done", "chat", "pending_q"):
         st.session_state.pop(k, None)
     st.query_params.clear()
@@ -1460,6 +1504,8 @@ def login_screen():
         with st.form("login_form", border=False):
             name = st.text_input("성함", key="li_name", placeholder="예: 홍길동")
             pw = st.text_input("비밀번호", key="li_pw", type="password")
+            remember = st.checkbox("이 기기에서 로그인 상태 유지", key="li_remember")
+            st.markdown(_REMEMBER_HELP, unsafe_allow_html=True)
             submitted = st.form_submit_button("로그인", type="primary",
                                               use_container_width=True)
         if submitted:
@@ -1467,6 +1513,9 @@ def login_screen():
             if ok and config.is_admin(name) and "미설정" in msg:
                 ok, msg = False, "관리자 계정은 비밀번호가 필요합니다. 서버 담당자에게 문의하세요."
             if ok:
+                if remember and not config.is_admin(name.strip()):
+                    # 다음 화면에서 브라우저 쿠키에 저장(관리자 계정은 보안상 저장하지 않음)
+                    st.session_state["set_login_cookie"] = name.strip()
                 _enter(name.strip())
             else:
                 st.warning(msg)
@@ -2331,6 +2380,17 @@ def main():
         elif _u:
             # 서명 없는/위조된 ?u= 는 무시하고 URL 을 정리(로그인 화면으로).
             st.query_params.clear()
+    # '로그인 상태 유지'를 체크했던 기기: 쿠키(성함|서명토큰, 30일)로 자동 로그인.
+    # 같은 세션에서 로그아웃했다면(logged_out) 남은 쿠키로 다시 들어가지 않는다.
+    if not st.session_state.get("auth_user") and not st.session_state.get("logged_out"):
+        _c = _read_login_cookie()
+        if _c and not config.is_admin(_c[0]) and _verify_user_token(*_c):
+            _load_user_session(_c[0])
+            _set_login_params(_c[0])
+    if st.session_state.pop("clear_login_cookie", False):
+        _write_login_cookie(None)                  # 로그아웃 → 저장된 로그인 지우기
+    if st.session_state.get("auth_user") and st.session_state.get("set_login_cookie"):
+        _write_login_cookie(st.session_state.pop("set_login_cookie"))
 
     # 접속 흐름: 로그인 → 내 정보 입력 → (이후) 포털 화면.
     # 로그인·내 정보는 무거운 어시스턴트가 필요 없으므로 바로 뜬다.
