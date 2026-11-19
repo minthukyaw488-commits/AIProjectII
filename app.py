@@ -1444,7 +1444,7 @@ _PROFILE_VIEW_CSS = """
   .pf-row{display:flex; justify-content:space-between; gap:12px; padding:12px 0;
     border-bottom:1px solid #ece8df; font-size:1.08rem}
   .pf-row:last-child{border-bottom:0}
-  .pf-row span{color:#3d4655} .pf-row b{color:#1c2430; text-align:right}
+  .pf-row span{color:#3d4655} .pf-row b{color:#1c2430; text-align:right; white-space:nowrap}
 </style>
 """
 
