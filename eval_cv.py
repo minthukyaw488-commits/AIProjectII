@@ -383,7 +383,7 @@ def _write_report(metas, results):
     for k, name in K:
         L.append(f"| {name} | {_ms(r['baseline_test'][k] for r in results)} | "
                  f"**{_ms(r['test'][k] for r in results)}** |")
-    L += ["", "> 기준선 = 지금 서비스 설정(재랭커 ON, 후보 10, 키워드 가점 0, 게이트 0.25, 학습 키워드 없음)을 "
+    L += ["", "> 기준선 = 지금 서비스 설정(재랭커 ON, 후보 10, 키워드 가점 0, 게이트 0.25, 유사 질문 분류 없음)을 "
           "**같은 테스트 문항**에서 측정한 값.", ""]
     adv_types = sorted({k for r in results for k in r["adv_refused"]})
     if adv_types:
