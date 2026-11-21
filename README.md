@@ -1,5 +1,5 @@
 # 대전 독거노인 복지 안내 · 이상신호 감지 시스템
-### On-device LLM + RAG for elderly welfare (Daejeon)
+### LLM + RAG for elderly welfare (Daejeon)
 
 대전광역시 독거노인을 위한 음성·문자 AI입니다. 어르신이 음성 또는 글로 복지
 관련 질문을 하면 **대전 공공문서에 근거해(RAG) LLM이 답변**하고, 대화 속 반복
