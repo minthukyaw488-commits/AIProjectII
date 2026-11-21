@@ -35,6 +35,11 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 # 재현성: 신호는 규칙 기반이 기본(원하면 USE_LLM_SIGNAL=1), 검색은 결정형 경로.
 os.environ.setdefault("USE_LLM_SIGNAL", "0")
 os.environ.setdefault("USE_AGENT", "0")
+# 이 스크립트는 '200문항 전체 1회' 기존 프로토콜(11-14 리포트)과 비교하는 기준선이다.
+# 라벨 유사 질문 분류기가 바로 이 200문항으로 학습되므로(누수), 여기서는 라벨 가점을 끄고
+# 예전 설정(후보 10)으로 측정한다. 개선 효과는 eval_cv.py(50/25/25×5회)에서 정직하게 잰다.
+os.environ.setdefault("RAG_KEYWORD_BOOST", "0")
+os.environ.setdefault("RAG_CANDIDATES", "10")
 
 from src import config  # noqa: E402
 from src.abnormal_signal import AbnormalSignalDetector, SentimentAnalyzer  # noqa: E402
