@@ -401,7 +401,7 @@ def _write_report(metas, results):
           "|---|---|---|---|---|---|---|---|---|"]
     for r in results:
         h = r["hp"]
-        L.append(f"| {r['repeat']} | {'/'.join(map(str, r['sizes']))} | `{r['setting']}` | "
+        L.append(f"| {r['repeat']} | {'/'.join(map(str, r['sizes']))} | `{r['setting'].replace('|', ' · ')}` | "
                  f"{'ON' if h['rerank'] else 'OFF'} | {h['pool']} | {h['kw_boost']} | {h['gate']} | "
                  f"{h['knn_k']} / {h['knn_tau']} | {_objective(r['val']) * 100:.1f}% |")
     topics = sorted({t for r in results for t in r["test"]["per_topic_hit3"]})
