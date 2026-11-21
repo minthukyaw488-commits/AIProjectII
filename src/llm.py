@@ -67,7 +67,17 @@ ANSWER_SYSTEM_PROMPT = (
     "5) 비용(무료/유료·금액)이나 자격을 물으면, 참고 자료에 명시된 경우에만 그대로 "
     "답합니다. 자료에 '무료'나 금액이 없으면 '국가 보조금' 같은 추측을 하지 말고 "
     "주민센터 문의로 안내합니다.\n"
-    "예시)\n"
+    "6) 어려운 제도 이름은 어르신이 한눈에 알 수 있도록 쉬운 말로 풀어 줍니다. "
+    "예: '에너지바우처'는 '냉·난방비 지원', '장기요양보험'은 '요양 돌봄 지원'처럼 "
+    "쉬운 설명을 함께 적습니다.\n"
+    "7) 전화번호·주소·기관 이름은 참고 자료에 그대로 적힌 것만 씁니다. 자료에 없으면 "
+    "지어내지 말고 '가까운 주민센터(행정복지센터)'로 안내합니다. '예시'라는 말이나 "
+    "괄호 속 설명 표시를 답변에 쓰지 않습니다.\n"
+    "8) 질문 속 숫자·나이·금액·요일·조건을 그대로 믿지 않습니다. 참고 자료와 다르면 "
+    "'아닙니다. 자료에는 ○○로 되어 있습니다'처럼 먼저 바로잡고, 자료에 없으면 "
+    "'자료에서 확인되지 않습니다'라고 말합니다. 질문에 나온 제도·사업 이름이 참고 자료에 "
+    "없으면 그 제도가 있다고 가정하지 말고, 다른 제도의 신청 방법을 옮겨 붙이지 않습니다.\n"
+    "[답변 모양 참고 — 아래 내용은 모양만 참고하고 그대로 옮기지 않습니다]\n"
     "질문: 기초연금은 어떻게 신청하나요?\n"
     "답변:\n"
     "- **대상**: 만 65세 이상 어르신\n"
@@ -144,6 +154,145 @@ def build_personal_system(profile, question: str = "",
         "받을 수 있는 다른 복지를 안내합니다."
     )
     return base + block + _eligibility_note(profile, question)
+
+
+import re as _re
+_URL_RE = _re.compile(r"(?:https?://|www\.)[^\s)>\]]+", _re.IGNORECASE)
+
+
+def clean_answer(text: str) -> str:
+    """답변에서 URL(웹주소)을 결정적으로 제거한다.
+
+    시스템 프롬프트가 URL 금지를 지시하지만, 작은 온디바이스 모델(2.4B)이 검색
+    문서의 주소(예: http://online.bokjiro.go.kr)를 그대로 옮겨 적는 경우가 있다.
+    어르신용이라 URL은 쓸모가 없고 프롬프트 규칙에도 어긋나므로, 생성 후 제거한다.
+    (평가지표 fact-coverage 로 드러난 실제 버그를 생성 단계에서 차단.)"""
+    if not text:
+        return text
+    t = _URL_RE.sub("", text)
+    t = _re.sub(r"\(\s*\)", "", t)          # URL 제거 후 남은 빈 괄호 ( )
+    t = _re.sub(r"\(\s*$", "", t)           # 줄 끝에 매달린 여는 괄호 (
+    t = _re.sub(r"[ \t]{2,}", " ", t)       # 중복 공백
+    t = _re.sub(r"\s+([.,)])", r"\1", t)    # 구두점 앞 공백
+    return t.strip()
+
+
+# 전화번호(지역번호형 02-123-4567 / 대표번호형 1577-0199). 109·119·129 같은 3자리
+# 긴급·상담 번호는 이 패턴에 걸리지 않으므로 항상 유지된다.
+_PHONE_RE = _re.compile(r"(?<!\d)(?:0\d{1,2}[-.)\s]?\d{3,4}[-.\s]?\d{4}|1[5-9]\d{2}[-.\s]?\d{4})(?!\d)")
+_EXAMPLE_RE = _re.compile(r"\(\s*예시\s*\)|예시\s*[)）:：]\s*|\[\s*예시\s*\]")
+PHONE_FALLBACK_LINE = "- 정확한 연락처는 **가까운 주민센터(행정복지센터)** 또는 **보건복지상담센터 129**에 확인해 주세요."
+
+
+# 지역번호 + 한 묶음만 남은 '번호 조각'(예: "042-6773"). 완전한 번호가 아니라 _PHONE_RE 에
+# 걸리지 않지만, 어르신이 그대로 걸면 엉뚱한 곳으로 간다(평가에서 실제로 나옴).
+_PHONE_FRAG_RE = _re.compile(r"(?<![\d-])0\d{1,2}[-.)]\d{3,4}(?![-.\s]?\d)")
+
+
+def _digits(s: str) -> str:
+    return _re.sub(r"\D", "", s)
+
+
+def _mostly_foreign(text: str) -> bool:
+    """한글보다 영문이 많은 답(작은 모델이 가끔 영어로 답함) → 어르신께 내보내지 않는다."""
+    ko = len(_re.findall(r"[가-힣]", text or ""))
+    en = len(_re.findall(r"[A-Za-z]", text or ""))
+    return en > 20 and en > ko
+
+
+def ground_answer(text: str, contexts) -> str:
+    """답변을 검색 근거(contexts)에 맞춰 결정적으로 정리한다(생성 후 처리).
+
+    ① 프롬프트의 형식 안내를 모델이 그대로 옮긴 '(예시)'·'예시)' 표기를 지운다.
+    ② 참고 자료에 없는 전화번호가 들어간 줄은 통째로 지운다(작은 모델이 그럴듯한
+       번호를 지어내는 환각 — 어르신이 잘못된 곳에 전화하면 안 됨). 지운 줄이 있으면
+       주민센터·129 확인 안내 한 줄을 덧붙인다.
+    """
+    if not text:
+        return text
+    if _mostly_foreign(text):
+        return OFF_DOMAIN_REPLY
+    t = _EXAMPLE_RE.sub("", text)
+    allowed = {_digits(m) for c in (contexts or []) for m in _PHONE_RE.findall(c or "")}
+    kept, dropped = [], False
+    for line in t.split("\n"):
+        nums = _PHONE_RE.findall(line)
+        frags = _PHONE_FRAG_RE.findall(line)
+        if (nums and any(_digits(n) not in allowed for n in nums)) or \
+                any(not any(_digits(f) in a for a in allowed) for f in frags):
+            dropped = True
+            continue
+        kept.append(line.rstrip())
+    out = "\n".join(kept).strip()
+    if dropped and PHONE_FALLBACK_LINE not in out:
+        out = (out + "\n" + PHONE_FALLBACK_LINE).strip()
+    return out
+
+
+# ── ① 없는 제도 확인(생성 전, 결정적) ──────────────────────────────────────────
+# 평가(eval_adversarial.py)에서 "무료 해외여행 지원금 신청법?" 같은 없는 제도에, 모델이
+# 검색된 '다른 제도'의 신청 절차를 그대로 옮겨 붙여 사실처럼 답했다. 그래서 질문이
+# 특정 제도·사업을 가리키면 그 이름(수식어)이 검색된 근거에 실제로 있는지 먼저 본다.
+# 없으면 LLM 을 부르지 않고 "자료에서 확인되지 않는 제도" 로 안내한다.
+_SERVICE_HEADS = ("사업", "서비스", "제도", "지원금", "지급", "배달", "바우처", "혜택", "프로그램")
+_RARE_HEADS = ("보너스", "대출", "면제", "대여", "파견")       # 그 자체가 내용어인 머리말
+_STOP_TERMS = {"대전", "대전시", "대전광역시", "어르신", "노인", "독거노인", "무료", "전용", "지원",
+               "신청", "방법", "어떻게", "어디서", "어디", "언제", "우리", "동네", "특별", "일시",
+               "현금", "이상", "매달", "매일", "정부", "국가", "관련", "복지", "새로운", "요즘",
+               "여름", "겨울", "봄", "가을", "올해", "내년", "작년", "세대", "가구", "제공",
+               # 동사 활용형(맨 형태로 남아 명사처럼 보이는 것)
+               "나눠", "보내", "가져다", "도와", "챙겨", "해줘", "알려"}
+# 복지 일반 어휘 — 검색 근거에 똑같은 글자가 없어도 실재 제도일 수 있으니 확인 대상에서 뺀다.
+_SAFE_TERMS = {"돌봄", "요양", "간호", "방문", "급식", "식사", "도시락", "반찬", "목욕", "병원", "동행",
+               "상담", "교육", "검진", "검사", "일자리", "교통", "주거", "난방", "냉방", "안부", "건강",
+               "장비", "생활", "가사", "이동", "주간", "보호", "재가", "치매", "연금", "의료", "약",
+               "안전", "응급", "여가", "문화", "운동", "경로", "공익", "활동", "사회",
+               # 어르신이 흔히 쓰는 생활어(문서 용어와 글자가 달라도 실재 제도)
+               "전기세", "가스비", "기름값", "난방비", "냉방비", "밥", "끼니", "보건소", "주민센터"}
+_PARTICLE_END = ("에서", "으로", "에게", "은", "는", "이", "가", "을", "를", "에", "의", "도", "로",
+                 "와", "과", "만", "요")
+UNSUPPORTED_SERVICE_REPLY = (
+    "말씀하신 **'{term}'** 관련 제도는 제가 가진 복지 자료에서 확인되지 않아요.\n"
+    "- 있지 않은 제도를 안내해 드리면 안 되기 때문에, 신청 방법은 말씀드리지 않을게요.\n"
+    "- 비슷한 지원이 있는지는 가까운 **주민센터(행정복지센터)** 또는 "
+    "**보건복지상담센터 129**에 꼭 확인해 주세요."
+)
+
+
+def _service_terms(question: str) -> list[str]:
+    """질문에서 '제도 이름을 이루는 내용어' 후보(맨 명사만)를 뽑는다."""
+    from .topic_labels import TOPIC_KEYWORDS
+    known = {k for ks in TOPIC_KEYWORDS.values() for k in ks}
+    toks = _re.findall(r"[가-힣A-Za-z0-9]+", question or "")
+    cands: list[str] = []
+    for i, tok in enumerate(toks):
+        head = next((h for h in _SERVICE_HEADS + _RARE_HEADS if h in tok), None)
+        if not head:
+            continue
+        pre = tok[: tok.index(head)]                     # "노인맞춤돌봄서비스를" → "노인맞춤돌봄"
+        window = ([pre] if pre else []) + toks[max(0, i - 3): i]
+        if head in _RARE_HEADS:
+            window.append(head)
+        for w in window:
+            if any(w.endswith(e) for e in _PARTICLE_END) or _re.search(r"\d", w):
+                continue                                 # 조사·어미가 붙은 말, 숫자는 수식어 아님
+            if len(w) < 2 or w in _STOP_TERMS or w in _SAFE_TERMS:
+                continue
+            if any(w in k or k in w for k in known) or any(s in w for s in _SAFE_TERMS):
+                continue
+            cands.append(w)
+    return list(dict.fromkeys(cands))
+
+
+def unsupported_service_term(question: str, contexts) -> str | None:
+    """질문이 가리키는 제도 이름이 검색 근거에 없으면 그 낱말을 돌려준다(없으면 None)."""
+    ctx = "".join("".join((c or "").split()) for c in (contexts or []))
+    if not ctx:
+        return None
+    for w in _service_terms(question):
+        if w not in ctx:
+            return w
+    return None
 
 
 # Warm, chatbot-like replies for greetings / small talk (no RAG, no refusal).
@@ -382,7 +531,33 @@ class GeminiLLM:
                 return self._fallback(prompt, error=str(exc))
         return self._fallback(prompt, error="rate limit")
 
-    _fallback = staticmethod(OpenAILLM._fallback)
+    def generate_vision(self, prompt: str, image_bytes: bytes,
+                        mime: str = "image/jpeg", temperature: float = 0.3) -> str:
+        """이미지를 '보고' 답하는 멀티모달 호출(Gemini vision). 사진 속 글자뿐 아니라
+        표·그림·전체 맥락까지 이해한다. 키가 없으면 안내 문구를 돌려준다."""
+        if not self.available:
+            return "이미지 분석은 Gemini API 키가 설정된 경우에만 가능합니다."
+        import base64
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        body = {
+            "contents": [{"role": "user", "parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": mime, "data": b64}}]}],
+            "generationConfig": {"temperature": temperature, "maxOutputTokens": 1200},
+        }
+        url = f"{self.base_url}/models/{self.model}:generateContent?key={self.api_key}"
+        data = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=data, headers={"Content-Type": "application/json",
+                                     "User-Agent": _USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=config.LLM_TIMEOUT) as resp:
+                out = json.loads(resp.read())
+                parts = out["candidates"][0]["content"]["parts"]
+                return "".join(p.get("text", "") for p in parts).strip()
+        except Exception as exc:
+            print(f"[Gemini-vision] 실패: {exc}", file=sys.stderr)
+            return "사진을 분석하지 못했어요. 더 또렷한 사진으로 다시 올려 주세요."
 
 
 def make_llm():

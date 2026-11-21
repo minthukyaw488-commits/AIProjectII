@@ -1,7 +1,7 @@
 {
   "name": "대전 복지 도우미",
   "short_name": "복지 도우미",
-  "description": "대전광역시 독거노인 복지 안내 · 음성 AI (기기 내 처리, 대화 비공개)",
+  "description": "대전광역시 어르신 복지 안내 AI (학생 프로젝트 시연용)",
   "lang": "ko",
   "start_url": "/",
   "scope": "/",

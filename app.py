@@ -15,6 +15,8 @@ import streamlit as st
 from src import config
 from src.tts import TextToSpeech
 from src.worker import AssistantClient
+from src.crisis import CRISIS_PATTERNS, CRISIS_REPLY, is_crisis
+from src.crisis import normalize as _crisis_norm
 
 st.set_page_config(page_title="대전노인복지HUB", layout="wide",
                    initial_sidebar_state="expanded")
@@ -40,11 +42,41 @@ ICONS = {
     "case": f'{_S}<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M3 12h18"/></svg>',
 }
 POPULAR = ["기초연금", "치매 검진", "노인일자리", "에너지 바우처", "경로우대", "방문간호"]
+# (날짜, 제목, 누르면 AI 상담에 보낼 질문)
+# (날짜, 제목, 상세 본문[마크다운], AI 상담용 질문)
 NOTICES = [
-    ("2026-08-20", "2026년 기초연금 선정기준액 인상 안내"),
-    ("2026-08-14", "겨울철 에너지바우처 신청 접수 시작"),
-    ("2026-08-05", "치매안심센터 무료 조기검진 프로그램 운영"),
-    ("2026-07-28", "노인맞춤돌봄서비스 신규 대상자 모집"),
+    ("2026-08-20", "2026년 기초연금 선정기준액 인상 안내",
+     "2026년도 기초연금 **선정기준액이 조정**되었습니다. 만 65세 이상 어르신 중 "
+     "소득이 기준 이하이면 매월 연금을 받으실 수 있습니다.\n\n"
+     "- **대상**: 만 **65세 이상**, 소득인정액이 선정기준액 이하\n"
+     "- **신청 장소**: 가까운 **주민센터**·**국민연금공단** 또는 **복지로**(온라인)\n"
+     "- **준비물**: 신분증, 통장 사본\n"
+     "- **문의**: 가까운 주민센터 *(정확한 기준액·지급액은 주민센터에서 확인)*",
+     "기초연금 선정기준액이 얼마인가요? 저도 받을 수 있나요?"),
+    ("2026-08-14", "겨울철 에너지바우처 신청 접수 시작",
+     "겨울철 **냉·난방비를 지원**하는 에너지바우처 신청이 시작되었습니다.\n\n"
+     "- **대상**: 생계·의료·주거·교육급여 수급자 중 노인·영유아·장애인 등 "
+     "**더위·추위에 취약한 분**\n"
+     "- **지원 내용**: 전기·도시가스·등유 등 **냉·난방 비용** 지원\n"
+     "- **신청 장소**: 가까운 **주민센터**(행정복지센터)\n"
+     "- **문의**: 가까운 주민센터",
+     "에너지바우처는 누가 받을 수 있고 어떻게 신청하나요?"),
+    ("2026-08-05", "치매안심센터 무료 조기검진 프로그램 운영",
+     "보건소 **치매안심센터**에서 **무료 조기검진·상담**을 운영합니다. 기억력이 "
+     "걱정되시면 편하게 검진받으실 수 있습니다.\n\n"
+     "- **대상**: 만 60세 이상 어르신 *(지역 기준은 센터 확인)*\n"
+     "- **내용**: 인지선별검사, 상담, 치매 어르신·가족 지원\n"
+     "- **비용**: **무료**\n"
+     "- **문의**: 가까운 **보건소 치매안심센터**",
+     "치매 조기검진은 무료인가요? 어디서 받나요?"),
+    ("2026-07-28", "노인맞춤돌봄서비스 신규 대상자 모집",
+     "혼자 지내시는 어르신께 **생활지원사가 방문·안부 확인**을 도와드리는 "
+     "노인맞춤돌봄서비스의 신규 대상자를 모집합니다.\n\n"
+     "- **대상**: 돌봄이 필요한 **독거·취약 어르신**\n"
+     "- **내용**: 안전·안부 확인, 생활교육, 가사·외출 동행 등\n"
+     "- **신청 장소**: 가까운 **주민센터**(행정복지센터)\n"
+     "- **문의**: 가까운 주민센터",
+     "노인맞춤돌봄서비스 대상과 신청 방법을 알려주세요"),
 ]
 
 
@@ -112,6 +144,14 @@ def inject_css():
       @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
 
       #MainMenu, header[data-testid="stHeader"], footer {{visibility:hidden; height:0}}
+      /* 헤더는 숨기되, 닫은 사이드바(설정·관리자 화면)를 다시 여는 버튼은 보이게 —
+         예전엔 헤더와 함께 숨겨져 한 번 닫으면 새로고침 전까지 다시 열 수 없었다. */
+      header[data-testid="stHeader"] [data-testid="stExpandSidebarButton"]{{
+        visibility:visible !important; position:fixed; top:10px; left:10px; z-index:10000;
+        background:#ffffff; border:2px solid {navy}; border-radius:12px;
+        width:48px; height:48px; box-shadow:0 4px 14px -6px rgba(16,35,61,.45)}}
+      header[data-testid="stHeader"] [data-testid="stExpandSidebarButton"] *{{
+        visibility:visible !important; color:{navy} !important}}
       .block-container{{padding:0 !important; max-width:100% !important}}
       .stApp{{background:{bg}}}
       html, body, [class*="css"], .stApp{{font-size:{base}px;
@@ -122,7 +162,8 @@ def inject_css():
       /* top utility bar */
       .util{{background:{navy2}; color:#c7d4ee; font-size:.82rem}}
       .util .gov-wrap{{display:flex; justify-content:flex-end; gap:22px; padding:9px 24px}}
-      .util span{{opacity:.85; cursor:pointer}} .util span:hover{{opacity:1;color:#fff}}
+      .util a{{opacity:.85; cursor:pointer; color:#c7d4ee !important; text-decoration:none !important}}
+      .util a:hover{{opacity:1; color:#fff !important}}
 
       /* header + nav */
       .gnav{{background:rgba(255,255,255,.9); backdrop-filter:saturate(1.4) blur(8px);
@@ -135,9 +176,10 @@ def inject_css():
         display:flex;align-items:center;justify-content:center;font-size:1.25rem;
         box-shadow:0 6px 16px -4px {accent}66}}
       .menu{{display:flex; gap:8px; font-weight:600; font-size:1.02rem}}
-      .menu span{{padding:9px 15px; border-radius:11px; color:{muted}; cursor:pointer;
-        transition:all .15s}}
-      .menu span:hover{{background:{surface2}; color:{navy}}}
+      .menu{{flex-wrap:wrap}}
+      .menu a{{padding:9px 12px; border-radius:11px; color:{muted} !important; cursor:pointer;
+        transition:all .15s; text-decoration:none !important; white-space:nowrap}}
+      .menu a:hover{{background:{surface2}; color:{navy} !important}}
 
       /* hero - full-bleed short banner with illustration background */
       .hero .gov-wrap{{padding:0; max-width:100%}}
@@ -208,6 +250,7 @@ def inject_css():
       .cat-ic svg{{width:27px;height:27px;color:#fff}}
       .cat-name{{font-size:1.36rem;font-weight:800;letter-spacing:-.02em;color:#ffffff}}
       .cat-desc{{font-size:1.02rem;color:#ffffff;font-weight:500;opacity:.92}}
+      .cat-card .cat-desc{{padding-right:30px}}   /* 오른쪽 아래 → 화살표와 글자가 겹치지 않게 */
       .cat-card .arw{{position:absolute;right:24px;bottom:22px;font-size:1.4rem;opacity:.55;
         transition:transform .2s}}
       .cat-card:hover .arw{{transform:translateX(5px);opacity:.95}}
@@ -263,6 +306,9 @@ def inject_css():
         border-bottom:1px solid {line}; font-size:1.05rem; border-radius:12px;
         transition:background .15s}}
       .notice:hover{{background:{surface2}}}
+      a.notice{{text-decoration:none !important; cursor:pointer; color:inherit}}
+      a.notice .go{{margin-left:auto; color:#2f6bff; font-size:1.6rem; font-weight:700; line-height:1;
+        white-space:nowrap}}
       .notice .date{{color:#8493ac; font-variant-numeric:tabular-nums; min-width:104px;
         font-size:.95rem}}
       .notice .t{{font-weight:600; color:{ink}}}
@@ -445,6 +491,142 @@ def inject_css():
       }}
     </style>
     """, unsafe_allow_html=True)
+    st.markdown(_PAGE_MARGIN_CSS, unsafe_allow_html=True)
+    if not hc:                     # 고대비 모드는 자체 흑백 팔레트를 그대로 사용
+        st.markdown(_ELDER_CSS, unsafe_allow_html=True)
+    st.markdown(_PHONE_TEXT_CSS, unsafe_allow_html=True)   # 폰: 버튼·하단 탭 글씨 16px 이상
+    # 움직임(애니메이션): 고대비 모드에서는 끄고, 기기의 '동작 줄이기' 설정도 존중한다.
+    st.markdown(_NO_MOTION_CSS if hc else _MOTION_CSS, unsafe_allow_html=True)
+
+
+# ── UI 애니메이션 — 어르신용이라 느리고 부드럽게(0.2~0.4초), 깜빡임 없음 ─────────────
+#  ① 새 말풍선 부드럽게 등장(마지막 두 개만 — 지난 대화가 매번 다시 움직이지 않게)
+#  ② 답변 준비 중 '점 세 개' 표시(아래 _TYPING_HTML)
+#  ③ 버튼을 누르면 살짝 눌리는 느낌
+#  ④ 맞춤복지 카드 순서대로 등장(기존 fadeUp, 9장까지 지연)
+#  ⑤ 위기 안내 배너: 2.4초 주기의 은은한 테두리 빛(초당 3회 이상 깜빡임 금지 기준 준수)
+#  기기 설정 '동작 줄이기(prefers-reduced-motion)'면 모든 움직임을 끈다.
+_MOTION_CSS = """
+<style>
+  @keyframes bubIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+  @keyframes dotJump{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-6px);opacity:1}}
+  @keyframes softGlow{0%,100%{box-shadow:0 0 0 0 rgba(176,0,32,0)}50%{box-shadow:0 0 0 6px rgba(176,0,32,.18)}}
+  .chat .row:nth-last-child(-n+2) .bub, .bub-label{animation:bubIn .35s ease-out both}
+  .bub.typing{display:inline-flex; align-items:center; gap:10px; color:#5c6b86}
+  .bub.typing .dots i{display:inline-block; width:9px; height:9px; margin:0 2px; border-radius:50%;
+    background:#2f6bff; animation:dotJump 1.2s ease-in-out infinite}
+  .bub.typing .dots i:nth-child(2){animation-delay:.15s}
+  .bub.typing .dots i:nth-child(3){animation-delay:.3s}
+  .stApp div[data-testid="stButton"] > button,
+  .stApp div[data-testid="stFormSubmitButton"] > button{transition:transform .12s ease, box-shadow .12s ease}
+  .stApp div[data-testid="stButton"] > button:active,
+  .stApp div[data-testid="stFormSubmitButton"] > button:active{transform:scale(.96)}
+  .stApp .st-key-htnav div[data-testid="stButton"] > button:active{transform:scale(.92) !important}
+  .cat-card:nth-child(7){animation-delay:.3s} .cat-card:nth-child(8){animation-delay:.35s}
+  .cat-card:nth-child(9){animation-delay:.4s}
+  .warn-banner.crisis{animation:softGlow 2.4s ease-in-out infinite}
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{animation:none !important; transition:none !important}
+  }
+</style>
+"""
+_NO_MOTION_CSS = """
+<style>*, *::before, *::after{animation:none !important; transition:none !important}</style>
+"""
+_TYPING_HTML = ('<div class="chat" style="padding:2px 0"><div class="row l">'
+                '<div class="bub bot typing"><span class="dots"><i></i><i></i><i></i></span>'
+                '답변을 준비하고 있어요</div></div></div>')
+
+
+# 폰(640px 이하)에서 버튼·하단 탭·접기 메뉴 글씨가 14.9px 등 16px 보다 작아지던 문제.
+# 어르신 가독성 기준(최소 16px)으로 올린다. 1rem = 기본 글자 크기(가/가+/가++ 반영).
+_PHONE_TEXT_CSS = """
+<style>
+  @media(max-width:640px){
+    .stApp div[data-testid="stButton"] > button,
+    .stApp div[data-testid="stButton"] > button p,
+    .stApp div[data-testid="stFormSubmitButton"] > button,
+    .stApp div[data-testid="stFormSubmitButton"] > button p,
+    .stApp [data-testid="stExpander"] summary p{font-size:max(16px, 1rem) !important}
+    .stApp .st-key-htnav div[data-testid="stButton"] > button,
+    .stApp .st-key-htnav div[data-testid="stButton"] > button p{
+      font-size:16px !important; letter-spacing:-.04em}
+  }
+</style>
+"""
+
+
+# 페이지 좌우 여백(표준 폭) — 화면 끝에 붙던 입력창·버튼·채팅에 여백을 준다.
+# 기능 코드는 건드리지 않고 CSS 만 덧붙인다.
+#  · 본문 블록: 최대 1180px, 가운데 정렬, 좌우 16~40px(화면 크기에 따라)
+#  · 배경이 화면 끝까지 가야 하는 상단 띠(.util)·배너(.hero)·푸터(.foot)는 제외
+_TOP = '.block-container > [data-testid="stVerticalBlock"] > '
+_BODY = _TOP + ':not(:has(.util, .hero, .foot))'
+_PAGE_MARGIN_CSS = f"""
+<style>
+  {_BODY}{{width:100% !important; max-width:1180px !important;
+    margin-left:auto !important; margin-right:auto !important; box-sizing:border-box;
+    padding-left:clamp(16px,4vw,40px) !important; padding-right:clamp(16px,4vw,40px) !important}}
+  {_BODY} .gov-wrap{{padding-left:0 !important; padding-right:0 !important}}
+  /* 상단 메뉴 글자가 '복/지/서/비/스'처럼 한 글자씩 세로로 끊기지 않게 */
+  .menu{{flex-wrap:wrap; row-gap:4px}}
+  .menu > *{{white-space:nowrap; padding-left:11px !important; padding-right:11px !important}}
+</style>
+"""
+
+# 어르신 눈에 편한 색 — 노안·수정체 황변을 고려해 대비 7:1 이상(WCAG AAA),
+# 눈부심이 적은 따뜻한 미색 바탕, 색이 아닌 아이콘·글자로 구분. CSS 만 덧붙인다.
+_ELDER_CSS = """
+<style>
+  .stApp{background:#f7f5f0 !important}
+  .sub, .sec .sub{color:#3d4655 !important}
+  .sec.alt{background:transparent !important}   /* 서비스 영역 회색 사각 배경 제거 */
+  .menu a, .menu span{color:#3d4655 !important}
+  .util{font-size:1rem !important}
+  /* 공지 */
+  .notice .date{color:#4a5363 !important; font-weight:600}
+  .notice .t{font-size:1.05rem}
+  .newtag{background:#9b1c13 !important; font-size:.8rem !important}
+  /* 서비스·맞춤복지 카드: 흰 카드 + 진한 글자 + 왼쪽 색 띠(색은 보조 표시) */
+  .cat-card{background:#ffffff !important; background-image:none !important;
+    color:#1c2430 !important; border:2px solid #d9d4c7 !important;
+    border-left:10px solid var(--c) !important; box-shadow:0 2px 8px rgba(0,0,0,.06) !important;
+    animation:none !important}
+  .cat-card:hover{transform:none !important; border-color:#1e3a8a !important;
+    border-left-color:var(--c) !important; box-shadow:0 4px 14px rgba(0,0,0,.10) !important}
+  .cat-card, .cat-card *{text-decoration:none !important}
+  .cat-name{color:#1c2430 !important}
+  .cat-desc{color:#3d4655 !important; opacity:1 !important}
+  .cat-ic{background:var(--c) !important}
+  .cat-ic svg{color:#ffffff !important}
+  .cat-card .arw{color:#1e3a8a !important; opacity:1 !important}
+  /* 버튼: 그라데이션 대신 단색 진남색 */
+  .stApp .stButton button[kind="primary"],
+  .stApp div[data-testid="stForm"] button[kind="primaryFormSubmit"],
+  .stApp div[data-testid="stForm"] button[kind="secondaryFormSubmit"]{
+    background:#1e3a8a !important; background-image:none !important;
+    border:2px solid #1e3a8a !important; color:#ffffff !important; box-shadow:none !important}
+  .stApp div[data-testid="stButton"] > button[kind="secondary"]{
+    border:2px solid #b9b3a4 !important; color:#1c2430 !important}
+  /* 입력창 테두리를 또렷하게 */
+  [data-baseweb="input"]{border:2px solid #8a8476 !important}
+  /* 질문 칩 */
+  .chip{border:2px solid #1e3a8a !important; color:#1e3a8a !important; font-weight:700}
+  /* 말풍선 */
+  .bub.user{background:#1e3a8a !important; background-image:none !important}
+  .bub.bot{border:2px solid #d9d4c7 !important}
+  .bub.bot::before{font-size:.85rem !important; color:#1e3a8a !important}
+  /* 하단 탭: 선택 안 된 탭 글자도 잘 보이게 */
+  .stApp .st-key-htnav div[data-testid="stButton"] > button[kind]{border:0 !important;
+    background:transparent !important; box-shadow:none !important}
+  .stApp .st-key-htnav div[data-testid="stButton"] > button[kind="secondary"]{color:#3d4655 !important}
+  .stApp .st-key-htnav div[data-testid="stButton"] > button[kind="primary"]{color:#1e3a8a !important;
+    font-weight:800 !important}
+</style>
+"""
+
+# 로그인·내 정보 화면은 폼이 너무 넓게 퍼지지 않도록 가운데 좁은 폭으로.
+_NARROW_FORM_CSS = "<style>" + _BODY + "{{max-width:{w}px !important}}</style>"
 
 
 def inject_pwa():
@@ -507,6 +689,8 @@ def bottom_tab_bar(active="home"):
             kind = "primary" if tab == active else "secondary"
             if col.button(label, key=f"nav_{tab}", use_container_width=True, type=kind):
                 st.session_state["tab"] = tab
+                st.session_state.pop("notice", None)   # 탭 이동 시 공지 상세 닫기
+                st.session_state.pop("welfare", None)  # 맞춤 복지 상세도 닫기
                 st.rerun()
 
 
@@ -573,7 +757,8 @@ def _chat_html(messages, limit: int = 8) -> str:
 # 통증·우울·고립 표현(주의) / 자살·자해 암시(위기)
 _CONCERN = ("아파", "아프", "불편", "도와줘", "도와주", "힘들", "외로", "우울",
             "슬프", "괴로", "못살", "숨이", "어지럽", "쓰러", "기운이없")
-_CRISIS = ("죽고싶", "죽어", "자살", "살기싫", "사라지고싶", "끝내고싶")
+# 위기 표현은 앱·파이프라인·이상신호가 같은 기준을 쓴다(src/crisis.py, 띄어쓰기 무시).
+_CRISIS = CRISIS_PATTERNS
 
 
 def _concern_banner():
@@ -585,7 +770,7 @@ def _concern_banner():
             break
     if not last:
         return
-    t = last.replace(" ", "")
+    t = _crisis_norm(last)          # 띄어쓰기 제거 + "혼자 살면"⊃'자살' 오탐 보정
     crisis = any(k in t for k in _CRISIS)
     if crisis:
         st.markdown(
@@ -608,7 +793,7 @@ def _record_signal(q: str, r: dict | None = None):
     한 메시지가 두 번 저장되지 않도록 한다(중복 방지). 세션(앱 내 관리자 토글)과
     DB(별도 관리자 앱) 양쪽에 1건씩만 남긴다."""
     import time
-    t = q.replace(" ", "")
+    t = _crisis_norm(q)             # 띄어쓰기 제거 + "혼자 살면"⊃'자살' 오탐 보정
     crisis = any(k in t for k in _CRISIS)
     concern_kw = any(k in t for k in _CONCERN)
     pipe = bool(r and r.get("alert"))
@@ -698,10 +883,15 @@ def _source_caption(sources) -> str:
     return ("📚 Source: " + ", ".join(seen[:3])) if seen else ""
 
 
-def _answer_for(client, q: str, attach: str | None = None):
+def _answer_for(client, q: str, attach: str | None = None, spinner: bool = True):
     """질문 → 결과 dict. 인사/프로필/오류/저장·알림 처리(채팅 append 는 호출부에서).
     attach: 업로드한 사진·문서에서 읽은 글자(있으면 답변 근거로 함께 전달). 실패 시 None."""
-    if not attach and q.replace(" ", "").rstrip("!?.~ ") in _GREETINGS:
+    if is_crisis(q):
+        # 위기(자살·자해) 표현 → 검색·LLM 없이 즉시 고정 '도움 연결' 안내(109·119·129).
+        # 이상신호 기록·관리자 알림은 호출부의 _record_signal 이 '위기'로 남긴다.
+        r = {"question": q, "sources": [], "answer": CRISIS_REPLY, "crisis": True,
+             "alert": f"위기 표현 감지 — 즉시 확인 필요: {q}"}
+    elif not attach and q.replace(" ", "").rstrip("!?.~ ") in _GREETINGS:
         u = st.session_state.get("auth_user", "어르신")
         r = {"question": q, "sources": [],
              "answer": f"안녕하세요, {u} 님 😊 궁금하신 복지를 편하게 물어보세요."}
@@ -718,13 +908,19 @@ def _answer_for(client, q: str, attach: str | None = None):
         # 맞춤형: 프로필은 질문에 붙이지 않고 RAG 체인의 '시스템 프롬프트'로 전달한다
         # (나이·거주지·건강 반영 + 나이 자격 안내). 질문 원문은 깔끔하게 유지.
         prof = p if _profile_has_info(p) else None
-        with st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…"):
+        import contextlib
+        with (st.spinner("🔎 복지 문서를 검색하고 답변을 준비하는 중입니다…") if spinner
+              else contextlib.nullcontext()):
             r = (client.ask(q_send, profile=prof) if st.session_state.get("use_rag", True)
                  else client.ask_norag(q_send))
         if "error" in r:
             st.error(r["error"])
             return None
         r["question"] = q
+        # 대상 연령이 아닌 복지를 물으면 답변 맨 앞에 안내(코드로 확정 — 모델이 빠뜨리지 않게)
+        from src.welfare_rules import age_notice
+        r["answer"] = age_notice(q, p.get("age"),
+                                 p.get("name") or st.session_state.get("auth_user", "")) + r.get("answer", "")
     try:
         from src import db
         u = st.session_state.get("auth_user")
@@ -832,7 +1028,12 @@ def ask_and_stream(client, q: str, attach: str | None = None):
     _bubble("user", q)
     if attach:
         st.caption("📎 올려 주신 사진·문서를 읽어서 참고했어요.")
-    r = _answer_for(client, q, attach=attach)
+    typing = st.empty()
+    typing.markdown(_TYPING_HTML, unsafe_allow_html=True)   # ② 답변 준비 중 '점 세 개'
+    try:
+        r = _answer_for(client, q, attach=attach, spinner=False)
+    finally:
+        typing.empty()
     if not r:
         return
     _record_signal(q, r)        # 이상신호 기록(키워드+대화분석 합쳐 메시지당 1건)
@@ -910,15 +1111,17 @@ def ask_audio(client, wav: bytes):
 #   질문에 짧은 프로필 메모를 덧붙인다. 모두 선택 사항이라 비워두면 기존과 동일.
 # --------------------------------------------------------------------------
 def _profile_summary(p: dict) -> str:
-    def yn(v):
-        return "예" if v is True else ("아니오" if v is False else "모름")
+    """프로필 한 줄 요약 — '예'인 항목만 이름으로 적는다('아니오'·'모름'은 생략).
+    예) 나이 80세, 대전 서구 거주, 저소득, 혼자 거주, 거동 불편"""
     out = []
     if p.get("age") is not None:
         out.append(f"나이 {p['age']}세")
     if p.get("district"):
         out.append(f"대전 {p['district']} 거주")
-    out += [f"저소득 {yn(p.get('income_low'))}", f"독거 {yn(p.get('living_alone'))}",
-            f"거동불편 {yn(p.get('mobility_issue'))}", f"만성질환 {yn(p.get('chronic_illness'))}"]
+    for key, label in (("income_low", "저소득"), ("living_alone", "혼자 거주"),
+                       ("mobility_issue", "거동 불편"), ("chronic_illness", "만성질환")):
+        if p.get(key) is True:
+            out.append(label)
     return ", ".join(out)
 
 
@@ -934,6 +1137,11 @@ def _load_user_session(name: str):
     세션을 되살릴 때 공통으로 쓴다(Streamlit 세션은 reload 시 초기화되므로)."""
     from src import db
     st.session_state["auth_user"] = name
+    st.session_state["is_admin"] = config.is_admin(name)
+    if st.session_state["is_admin"]:
+        # 관리자(사회복지사) 계정: 어르신 프로필·대화 기록 없이 모니터 화면으로 바로 간다.
+        st.session_state["profile_done"] = True
+        return
     try:
         prof = db.get_profile(name)
         if prof:
@@ -954,25 +1162,235 @@ def _load_user_session(name: str):
         pass
 
 
+def _app_secret() -> bytes:
+    """URL 로그인 토큰 서명용 비밀키. data/.app_secret 에 1회 생성·보관(커밋 금지).
+    서버 재시작에도 같은 키를 쓰도록 파일로 유지한다."""
+    from pathlib import Path
+    p = Path(__file__).resolve().parent / "data" / ".app_secret"
+    try:
+        if p.exists():
+            b = p.read_bytes()
+            if b:
+                return b
+        import secrets as _secrets
+        sec = _secrets.token_bytes(32)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(sec)
+        return sec
+    except Exception:
+        # 파일 접근 불가 시에도 동작은 유지(데모). 운영에선 파일 키를 권장.
+        return b"welfare-hub-insecure-fallback-change-me"
+
+
+def _user_token(name: str) -> str:
+    """성함에 대한 서명 토큰(HMAC-SHA256). 비밀키 없이는 위조 불가."""
+    import hashlib
+    import hmac
+    return hmac.new(_app_secret(), (name or "").encode("utf-8"),
+                    hashlib.sha256).hexdigest()[:24]
+
+
+def _verify_user_token(name: str, tok: str) -> bool:
+    """URL 의 ?u=성함 이 유효한 서명(?t=)과 함께 왔는지 확인(계정 도용 차단)."""
+    import hmac
+    if not name or not tok:
+        return False
+    return hmac.compare_digest(_user_token(name), tok)
+
+
+def _set_login_params(name: str):
+    """로그인 유지용 URL 파라미터 설정: ?u=성함 &t=서명토큰."""
+    st.query_params["u"] = name
+    st.query_params["t"] = _user_token(name)
+
+
+@st.dialog("로그아웃 확인")
+def _confirm_logout():
+    """잘못 눌러 바로 로그아웃되지 않도록 한 번 더 묻는다.
+    (성함·비밀번호를 기억하지 못하는 어르신이 다시 못 들어오는 일을 막기 위함)"""
+    st.markdown('<div style="font-size:1.12rem;line-height:1.7">정말 <b>로그아웃</b> 하시겠어요?'
+                '<br>다시 들어오실 때 <b>성함과 비밀번호</b>가 필요합니다.</div>',
+                unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    if c1.button("아니요, 계속 이용", type="primary", use_container_width=True,
+                 key="logout_no"):
+        st.rerun()                       # 창 닫기
+    if c2.button("네, 로그아웃", use_container_width=True, key="logout_yes"):
+        _logout()
+
+
 def _logout():
-    """로그아웃 → 로그인 화면으로. 세션·URL(?u=) 모두 비워 새 계정으로 로그인 가능."""
-    for k in ("auth_user", "profile", "profile_done", "chat", "pending_q"):
+    """로그아웃 → 로그인 화면으로. 세션·URL(?u=,?t=) 모두 비워 새 계정으로 로그인 가능."""
+    for k in ("auth_user", "is_admin", "profile", "profile_done", "chat", "pending_q"):
         st.session_state.pop(k, None)
     st.query_params.clear()
     st.rerun()
 
 
-def _ask_href(q: str) -> str:
-    """카드·칩 링크 주소: ?u=<성함>&ask=<질문>.
-    새로고침돼도 ?u= 로 로그인이 유지되도록 성함을 함께 싣는다."""
+_TABS = ("home", "mywelfare", "talk", "services")
+
+
+def _nav_href(tab: str) -> str:
+    """상단 메뉴 링크 주소: ?u=<성함>&t=<서명토큰>&tab=<탭>.
+    _ask_href 와 같은 방식(서명 토큰 포함)이라 눌러도 로그인이 유지된다."""
     from urllib.parse import quote
     u = st.session_state.get("auth_user", "")
-    return f"?u={quote(u)}&ask={quote(q)}"
+    t = _user_token(u) if u else ""
+    return f"?u={quote(u)}&t={quote(t)}&tab={quote(tab)}"
+
+
+def _ask_href(q: str) -> str:
+    """카드·칩 링크 주소: ?u=<성함>&t=<서명토큰>&ask=<질문>.
+    새로고침돼도 로그인이 유지되되, 서명(t) 없이는 복원되지 않아 계정 도용을 막는다."""
+    from urllib.parse import quote
+    u = st.session_state.get("auth_user", "")
+    t = _user_token(u) if u else ""
+    return f"?u={quote(u)}&t={quote(t)}&ask={quote(q)}"
+
+
+def _notice_href(i: int) -> str:
+    """공지 상세 페이지 링크: ?u=&t=&notice=<번호> (로그인 유지)."""
+    from urllib.parse import quote
+    u = st.session_state.get("auth_user", "")
+    t = _user_token(u) if u else ""
+    return f"?u={quote(u)}&t={quote(t)}&notice={i}"
+
+
+def _welfare_href(name: str) -> str:
+    """맞춤 복지 상세 페이지 링크: ?u=&t=&w=<복지 이름> (로그인 유지)."""
+    from urllib.parse import quote
+    u = st.session_state.get("auth_user", "")
+    t = _user_token(u) if u else ""
+    return f"?u={quote(u)}&t={quote(t)}&w={quote(name)}"
+
+
+def welfare_detail(name: str):
+    """맞춤 복지 카드 상세 — 챗봇을 거치지 않고 바로 보여 주는 정적 안내.
+    내 정보 기준으로 '왜 받을 수 있는지'를 먼저 보여 주고, 대상·지원 내용·신청 방법·문의처 순."""
+    import html as _h
+    from src.welfare_details import get_detail, meal_centers
+    from src.welfare_rules import Profile, get_welfare_table, _check_one
+    w = next((x for x in get_welfare_table() if x.name == name), None)
+    if w is None:
+        st.session_state.pop("welfare", None)
+        st.rerun()
+        return
+    d = get_detail(name) or {}
+    p = st.session_state.get("profile", {})
+    try:
+        reasons = _check_one(Profile(**p), w).reasons
+    except Exception:
+        reasons = []
+    reasons = [r for r in reasons if "필요" not in r or r.startswith("※")]
+
+    st.markdown('<div class="gov-wrap sec" id="welfare-detail">', unsafe_allow_html=True)
+    if st.button("← 맞춤 복지 목록으로", key="welfare_back"):
+        st.session_state.pop("welfare", None)
+        st.rerun()
+
+    def _ul(items):
+        return "<ul>" + "".join(f"<li>{_h.escape(i)}</li>" for i in items) + "</ul>"
+
+    def _sec(title, body):
+        return f'<div class="wd-sec"><div class="wd-h">{title}</div>{body}</div>'
+
+    parts = [
+        '<div class="wd-head">'
+        f'<span class="wd-ic">{d.get("icon", "✅")}</span>'
+        f'<div><div class="wd-title">{_h.escape(name)}</div>'
+        f'<div class="wd-sum">{_h.escape(d.get("what") or w.summary)}</div></div></div>']
+    if reasons:
+        user = _h.escape(st.session_state.get("auth_user", "어르신"))
+        parts.append(f'<div class="wd-why"><b>✅ {user} 님이 받으실 수 있는 이유</b>'
+                     f'{_ul(reasons)}</div>')
+    if d.get("who"):
+        parts.append(_sec("👥 누가 받을 수 있나요?", _ul(d["who"])))
+    if d.get("get"):
+        parts.append(_sec("🎁 무엇을 받나요?", _ul(d["get"])))
+    if d.get("how"):
+        parts.append(_sec("📝 어떻게 신청하나요?", _ul(d["how"])))
+    if d.get("centers"):
+        cs = meal_centers(p.get("district"))
+        if cs:
+            gu = _h.escape(p.get("district") or "대전")
+            rows = "".join(
+                f'<li><b>{_h.escape(c["name"])}</b> · '
+                f'<a href="tel:{_h.escape(c["phone"])}">☎ {_h.escape(c["phone"])}</a>'
+                f'<br><span class="wd-addr">{_h.escape(c["addr"])}</span></li>' for c in cs)
+            parts.append(_sec(f"📍 {gu} 수행기관", f"<ul>{rows}</ul>"))
+    if d.get("call"):
+        parts.append(_sec("☎ 문의", f'<p>{_h.escape(d["call"])}</p>'))
+    note = w.verify_note or "정확한 기준은 주민센터에서 확인하세요"
+    src = f' · 출처: {_h.escape(d["source"])}' if d.get("source") else ""
+    parts.append(f'<div class="wd-note">※ {_h.escape(note)}{src}</div>')
+    st.markdown(_WELFARE_DETAIL_CSS + '<div class="wd-card">' + "".join(parts) + '</div>',
+                unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("💬 AI 도우미에게 더 물어보기", key="welfare_ask",
+                 type="primary", use_container_width=True):
+        st.session_state["pending_q"] = f"{name} 대상과 신청 방법을 알려줘"
+        st.session_state["tab"] = "talk"
+        st.session_state.pop("welfare", None)
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+_WELFARE_DETAIL_CSS = """<style>
+.wd-card{background:#fff;border:1px solid #e6ebf4;border-radius:20px;padding:26px 26px 18px;
+  box-shadow:0 14px 34px -22px rgba(15,47,111,.35);margin-top:8px}
+.wd-head{display:flex;gap:16px;align-items:center;margin-bottom:16px}
+.wd-ic{font-size:2.2rem;width:64px;height:64px;border-radius:18px;background:#eef3fc;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.wd-title{font-size:1.6rem;font-weight:800;color:#0f2f6f;letter-spacing:-.02em}
+.wd-sum{color:#3d4a63;margin-top:4px;line-height:1.55}
+.wd-why{background:#eaf6ee;border:1px solid #bfe3cb;border-radius:14px;padding:14px 18px;
+  margin:6px 0 14px;color:#14532d}
+.wd-why ul{margin:8px 0 0 0;padding-left:20px}
+.wd-sec{padding:14px 0;border-top:1px solid #eef1f6}
+.wd-h{font-weight:800;color:#0f2f6f;font-size:1.12rem;margin-bottom:6px}
+.wd-sec ul{margin:0;padding-left:22px} .wd-sec li{margin:5px 0;line-height:1.6}
+.wd-sec p{margin:0}
+.wd-addr{color:#6b7891;font-size:.92em}
+.wd-note{margin-top:10px;padding-top:12px;border-top:1px dashed #d8dfeb;color:#6b7891;
+  font-size:.92rem;line-height:1.5}
+@media(max-width:560px){.wd-card{padding:20px 18px 14px}.wd-title{font-size:1.35rem}
+  .wd-ic{width:54px;height:54px;font-size:1.8rem}}
+</style>"""
+
+
+def notice_detail(client, i: int):
+    """공지사항 상세 화면 — 제목·날짜·본문 + 목록으로/AI 상담 버튼(챗봇 아님)."""
+    if i < 0 or i >= len(NOTICES):
+        st.session_state.pop("notice", None)
+        st.rerun()
+        return
+    date, title, body, ask_q = NOTICES[i]
+    st.markdown('<div class="gov-wrap sec" id="notice-detail">', unsafe_allow_html=True)
+    if st.button("← 공지 목록으로", key="notice_back"):
+        st.session_state.pop("notice", None)
+        st.rerun()
+    st.markdown(
+        f'<div style="border-bottom:2px solid #e6ebf4;padding-bottom:12px;margin:6px 0 16px">'
+        f'<div style="font-size:1.5rem;font-weight:800;color:#0f2f6f;letter-spacing:-.02em">'
+        f'{title}</div>'
+        f'<div style="color:#8493ac;font-size:.92rem;margin-top:6px">📅 {date} · '
+        f'대전노인복지HUB 공지</div></div>', unsafe_allow_html=True)
+    st.markdown(body)
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("💬 이 내용 AI 도우미에게 물어보기", key="notice_ask",
+                 type="primary", use_container_width=True):
+        st.session_state["pending_q"] = ask_q
+        st.session_state["tab"] = "talk"
+        st.session_state.pop("notice", None)
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def login_screen():
     """1단계 — 로그인(성함 기반, 프로토타입). 성공하면 auth_user 설정."""
     inject_css()
+    st.markdown(_NARROW_FORM_CSS.format(w=520), unsafe_allow_html=True)
     st.markdown('<div class="gov-wrap sec" style="max-width:500px;margin:7vh auto">',
                 unsafe_allow_html=True)
     st.markdown(
@@ -988,27 +1406,46 @@ def login_screen():
     def _enter(name: str):
         """로그인 성공 처리: 세션 설정 + 저장된 프로필·지난 대화 불러오기."""
         _load_user_session(name)
-        st.query_params["u"] = name   # 새로고침(카드 클릭) 후에도 로그인 유지
+        _set_login_params(name)       # ?u=성함 &t=서명토큰 (새로고침 후에도 로그인 유지)
         st.rerun()
 
     tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
+    # 입력란을 st.form 으로 묶어, 노트북에서는 Enter, 휴대폰에서는 키보드의
+    # '이동/완료' 만 눌러도 로그인·회원가입이 되게 한다(버튼 클릭도 그대로 동작).
+    # form 버튼도 기존 로그인 버튼과 같은 파란 그라데이션으로 보이게.
+    # (이 style 은 로그인 화면을 그릴 때만 페이지에 있으므로 다른 화면의 form 은 그대로)
+    st.markdown(
+        '<style>div[data-testid="stForm"] button[kind="primaryFormSubmit"]{'
+        'background:linear-gradient(135deg,#2f6bff,#0f2f6f) !important;border:none !important;'
+        'box-shadow:0 12px 24px -10px #2f6bff88 !important}</style>',
+        unsafe_allow_html=True)
     with tab_login:
-        name = st.text_input("성함", key="li_name", placeholder="예: 홍길동")
-        pw = st.text_input("비밀번호", key="li_pw", type="password")
-        if st.button("로그인", type="primary", use_container_width=True):
+        with st.form("login_form", border=False):
+            name = st.text_input("성함", key="li_name", placeholder="예: 홍길동")
+            pw = st.text_input("비밀번호", key="li_pw", type="password")
+            submitted = st.form_submit_button("로그인", type="primary",
+                                              use_container_width=True)
+        if submitted:
             ok, msg = db.login_check(name.strip(), pw)
+            if ok and config.is_admin(name) and "미설정" in msg:
+                ok, msg = False, "관리자 계정은 비밀번호가 필요합니다. 서버 담당자에게 문의하세요."
             if ok:
                 _enter(name.strip())
             else:
                 st.warning(msg)
     with tab_signup:
         st.caption("처음이시면 계정을 만들어 주세요. (비밀번호 4자 이상)")
-        n2 = st.text_input("성함", key="su_name", placeholder="예: 홍길동")
-        p2 = st.text_input("비밀번호", key="su_pw", type="password")
-        p3 = st.text_input("비밀번호 확인", key="su_pw2", type="password")
-        if st.button("회원가입", type="primary", use_container_width=True):
+        with st.form("signup_form", border=False):
+            n2 = st.text_input("성함", key="su_name", placeholder="예: 홍길동")
+            p2 = st.text_input("비밀번호", key="su_pw", type="password")
+            p3 = st.text_input("비밀번호 확인", key="su_pw2", type="password")
+            submitted2 = st.form_submit_button("회원가입", type="primary",
+                                               use_container_width=True)
+        if submitted2:
             if p2 != p3:
                 st.warning("비밀번호가 서로 다릅니다.")
+            elif config.is_admin(n2):
+                st.warning("이 이름은 사용할 수 없습니다. 다른 성함으로 가입해 주세요.")
             else:
                 ok, msg = db.signup(n2.strip(), p2)
                 if ok:
@@ -1023,6 +1460,7 @@ def login_screen():
 def profile_screen():
     """2단계 — 내 정보 입력. 저장하면 profile_done 설정 후 포털로."""
     inject_css()
+    st.markdown(_NARROW_FORM_CSS.format(w=660), unsafe_allow_html=True)
     p = st.session_state.get("profile", {})
     user = st.session_state.get("auth_user", "")
     st.markdown('<div class="gov-wrap sec" style="max-width:620px;margin:5vh auto">',
@@ -1072,7 +1510,7 @@ def profile_screen():
 
 def my_welfare_cards():
     """session_state['profile'] 기준으로 '내 맞춤 복지'를 카드로 보여준다.
-    카드를 누르면 ?ask= 로 해당 복지를 AI 도우미에게 바로 물어본다."""
+    카드를 누르면 ?w= 로 해당 복지의 상세 안내 화면(챗봇 아님)을 연다."""
     from urllib.parse import quote
     p = st.session_state.get("profile", {})
     if not _profile_has_info(p):
@@ -1089,9 +1527,8 @@ def my_welfare_cards():
     cards = ""
     for i, r in enumerate(eligible):
         c = palette[i % len(palette)]
-        ask_q = f"{r.welfare.name} 대상과 신청 방법을 알려줘"
         cards += (
-            f'<a class="cat-card" style="--c:{c}" href="{_ask_href(ask_q)}" target="_self">'
+            f'<a class="cat-card" style="--c:{c}" href="{_welfare_href(r.welfare.name)}" target="_self">'
             f'<span class="cat-ic">✅</span>'
             f'<span class="cat-name">{r.welfare.name}</span>'
             f'<span class="cat-desc">{r.welfare.summary}</span>'
@@ -1101,13 +1538,16 @@ def my_welfare_cards():
                  '바로 해당되는 복지를 찾지 못했어요. 정보를 더 입력해 보세요.</div>')
     maybe_html = ""
     if maybe:
-        chips = "".join(f'<span class="chip">{r.welfare.name}</span>' for r in maybe)
+        chips = "".join(f'<a class="chip" href="{_welfare_href(r.welfare.name)}" '
+                        f'target="_self">{r.welfare.name}</a>' for r in maybe)
         maybe_html = ('<p class="sub" style="margin-top:22px">확인하면 받으실 수 있어요</p>'
                       f'<div class="chips">{chips}</div>')
+    ps = _profile_summary(p)
+    info = f"({ps})" if ps else ""          # '예'인 항목만 — 하나도 없으면 괄호 생략
     st.markdown(
         '<div class="sec" id="mywelfare"><div class="gov-wrap">'
         f'<h2>{user} 님 맞춤 복지</h2>'
-        f'<p class="sub">입력하신 정보({_profile_summary(p)})로 받으실 수 있는 복지입니다. '
+        f'<p class="sub">입력하신 정보{info}로 받으실 수 있는 복지입니다. '
         '카드를 누르면 자세히 안내해 드려요. · 정확한 기준은 주민센터 확인</p>'
         f'<div class="cat-grid">{cards}</div>'
         f'{maybe_html}'
@@ -1119,18 +1559,20 @@ def my_welfare_cards():
 # --------------------------------------------------------------------------
 def header_nav(client):
     st.markdown(
+        # 상단 띠: 하단 탭(홈·맞춤복지·AI상담·서비스)과 겹치던 링크를 빼고 안내만 표시
         '<div class="util"><div class="gov-wrap">'
-        '<span>로그인</span><span>회원가입</span><span>사이트맵</span><span>English</span>'
-        '</div></div>', unsafe_allow_html=True)
+        '<span>대전광역시 어르신 복지 AI 안내</span>'
+        '<span>궁금한 점은 복지상담 ☎ 129</span>'
+        '</div></div>' + _HEADER_TIDY_CSS, unsafe_allow_html=True)
     st.markdown('<div class="gov-wrap" style="padding-top:14px;padding-bottom:6px">',
                 unsafe_allow_html=True)
-    b, s, n = st.columns([1.55, 2.05, 2.2], vertical_alignment="center")
+    b, s, n = st.columns([1.5, 2.1, 2.1], vertical_alignment="center")
     seal = ('<span class="seal"><svg class="brand-svg" viewBox="0 0 24 24" fill="none" '
             'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
             'stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/>'
             '<path d="M9 21v-5h6v5"/></svg></span>')
     b.markdown(f'<div class="brand">{seal} 대전노인복지HUB</div>', unsafe_allow_html=True)
-    with s:
+    with s, st.container(key="hdrsearch"):
         with st.form("hdr_search", clear_on_submit=True):
             sc1, sc2 = st.columns([3, 1])
             q = sc1.text_input("검색", placeholder="복지 서비스 검색",
@@ -1141,17 +1583,48 @@ def header_nav(client):
             st.session_state["tab"] = "talk"
             st.rerun()
     with n:
-        st.markdown('<div class="menu"><span>복지서비스</span><span>건강·의료</span>'
-                    '<span>어르신 돌봄</span><span>공지사항</span><span>상담·문의</span></div>',
-                    unsafe_allow_html=True)
+        # 메뉴: 하단 탭과 겹치는 '복지서비스'(=서비스)·'상담·문의'(=AI상담)는 빼고
+        # 하단 탭에 없는 바로가기만 둔다.
+        st.markdown(
+            '<div class="menu">'
+            f'<a href="{_ask_href("어르신 건강·의료 지원 서비스를 알려주세요")}" target="_self">건강·의료</a>'
+            f'<a href="{_ask_href("노인맞춤돌봄서비스가 뭐예요?")}" target="_self">어르신 돌봄</a>'
+            f'<a href="{_nav_href("home")}#notices" target="_self">공지사항</a>'
+            '</div>', unsafe_allow_html=True)
         uu = st.session_state.get("auth_user", "")
-        hc1, hc2 = st.columns([1.4, 1], vertical_alignment="center")
+        hc1, hc2 = st.container(key="hdruser").columns([1.4, 1], vertical_alignment="center")
         hc1.markdown(f'<div style="text-align:right;color:#5c6b86;font-size:.9rem;'
                      f'font-weight:700">👤 {uu} 님</div>', unsafe_allow_html=True)
         if hc2.button("로그아웃", key="hdr_logout", use_container_width=True,
                       help="로그인 화면으로 돌아가 다른 계정으로 로그인합니다."):
-            _logout()
+            _confirm_logout()            # 바로 나가지 않고 한 번 더 확인
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+# 머리글 정리: 로고·검색·로그아웃 글자가 좁은 화면에서 '검'·'로그…'처럼 잘리거나
+# 로고가 두 줄로 꺾이지 않게 한 줄 유지.
+_HEADER_TIDY_CSS = """
+<style>
+  .brand{white-space:nowrap}
+  .util .gov-wrap{justify-content:space-between !important}
+  .util span{opacity:.9}
+  [data-testid="stForm"] button p, .st-key-hdr_logout button p{white-space:nowrap}
+  .st-key-hdr_logout button{min-width:88px}
+  .menu{justify-content:flex-end; flex-wrap:nowrap}
+  /* 폰: 검색창+검색 버튼, 이름+로그아웃을 각각 한 줄로(세로로 쌓여 화면 절반을 차지하던 것) */
+  @media(max-width:640px){
+    .st-key-hdrsearch [data-testid="stHorizontalBlock"],
+    .st-key-hdruser[data-testid="stHorizontalBlock"], .st-key-hdruser [data-testid="stHorizontalBlock"]{
+      flex-wrap:nowrap !important; gap:8px !important; align-items:center}
+    .st-key-hdrsearch [data-testid="stColumn"], .st-key-hdruser [data-testid="stColumn"]{
+      min-width:0 !important; width:auto !important}
+    .st-key-hdrsearch [data-testid="stColumn"]:first-child,
+    .st-key-hdruser [data-testid="stColumn"]:first-child{flex:1 1 auto !important}
+    .st-key-hdrsearch [data-testid="stColumn"]:last-child,
+    .st-key-hdruser [data-testid="stColumn"]:last-child{flex:0 0 96px !important}
+  }
+</style>
+"""
 
 
 def voice_orb(client):
@@ -1272,7 +1745,6 @@ def hero_banner(subtitle: str | None = None):
     st.markdown(f"""
     <div class="hero" id="home"><div class="gov-wrap"><div class="hero-inner">
       {art}
-      <span class="eyebrow">대전광역시 · 어르신 복지</span>
       <h1>어르신, 무엇을 도와드릴까요?</h1>
       <p>{sub}</p>
     </div></div></div>
@@ -1283,18 +1755,28 @@ def home_screen(client):
     """홈 탭 — 환영 배너 + 빠른 질문(누르면 상담 탭에서 바로 답변) + 공지."""
     from urllib.parse import quote
     user = st.session_state.get("auth_user", "어르신")
-    hero_banner(f"{user} 님, 궁금한 복지를 아래에서 바로 물어보세요. 모든 상담은 안전하게 보호됩니다.")
+    hero_banner(f"{user} 님, 궁금한 것을 아래에서 눌러 보세요.")
     st.markdown('<div class="gov-wrap sec" id="homebody">', unsafe_allow_html=True)
-    st.markdown('<h2>무엇이든 물어보세요</h2>'
-                '<p class="sub">아래 질문을 누르면 ‘AI상담’에서 바로 답해 드려요. '
-                '직접 입력하시려면 아래 탭의 💬 AI상담을 눌러 주세요.</p>',
-                unsafe_allow_html=True)
-    quicks = ["기초연금 신청 방법 알려줘", "노인맞춤돌봄서비스가 뭐예요?",
-              "치매안심센터는 어디서 이용하나요?", "무릎이 아픈데 도움받을 곳이 있나요?",
-              "경로당·노인복지관 알려줘", "방문 건강관리 신청하고 싶어요"]
+    st.markdown('<h2>자주 묻는 질문</h2>'
+                '<p class="sub">누르시면 바로 답해 드려요.</p>', unsafe_allow_html=True)
+    # (버튼에 보이는 짧은 이름, 누르면 AI상담에 보내는 질문) — 읽기 쉽게 짧은 이름만 보여 준다
+    quicks = [("기초연금 신청", "기초연금 신청 방법 알려줘"),
+              ("노인맞춤돌봄", "노인맞춤돌봄서비스가 뭐예요?"),
+              ("치매안심센터", "치매안심센터는 어디서 이용하나요?"),
+              ("무릎·관절 도움", "무릎이 아픈데 도움받을 곳이 있나요?"),
+              ("경로당·복지관", "경로당·노인복지관 알려줘"),
+              ("방문 건강관리", "방문 건강관리 신청하고 싶어요")]
     chips = "".join(
-        f'<a class="chip" href="{_ask_href(q)}" target="_self">{q}</a>' for q in quicks)
+        f'<a class="chip" href="{_ask_href(q)}" target="_self">{label}</a>'
+        for label, q in quicks)
     st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
+    # 원하는 질문이 없을 때: 직접 물어볼 곳을 크게 안내(어르신이 다음 행동을 바로 알 수 있게)
+    st.markdown(f'<a class="ask-own" href="{_nav_href("talk")}" target="_self">'
+                '💬 다른 질문은 <b>여기를 눌러</b> 직접 물어보세요 ›</a>'
+                '<style>a.ask-own{display:block; margin:18px 0 4px; padding:16px 18px;'
+                'border-radius:16px; background:#1e3a8a; color:#fff !important;'
+                'font-size:1.1rem; text-align:center; text-decoration:none !important}'
+                'a.ask-own b{color:#fff}</style>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     notices_block()
 
@@ -1312,18 +1794,32 @@ _UPLOAD_TYPES = ["png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif",
 
 
 def _read_upload(up):
-    """업로드 파일 → (추출 텍스트, 오류메시지). OCR 결과는 파일별로 캐시해 재실행 시
-    다시 읽지 않는다. 글자를 못 찾으면 (None, 안내문)."""
+    """업로드 파일 → (추출 텍스트, 오류메시지). 결과는 파일별로 캐시한다.
+
+    - 사진: src/image_reader — Gemini vision(키 있을 때) → 서버 안 Ollama vision
+      (qwen2.5vl) → OCR 순으로 '보고' 읽어 쉬운 설명을 만든다.
+    - 문서(PDF·txt): OCR/텍스트 추출(on-device).
+    추출된 내용은 질문의 근거(attach)로 쓰여 RAG 답변에 반영된다."""
+    import os
     try:
         key = "ocr::" + str(getattr(up, "file_id", None) or up.name)
         if key in st.session_state:
             return st.session_state[key], None
-        from src.file_intake import extract_text_from_upload
-        with st.spinner("🔎 사진·문서에서 글자를 읽는 중입니다…"):
-            text, _kind = extract_text_from_upload(up.name, up.getvalue())
+        ext = os.path.splitext(up.name)[1].lower()
+        from src.file_intake import IMAGE_EXTS
+        if ext in IMAGE_EXTS:
+            # 사진: Gemini vision(키 있을 때) → 서버 안 Ollama vision → OCR 순 자동 전환
+            from src.image_reader import read_image
+            with st.spinner("🔎 사진을 자세히 살펴보고 있습니다…"):
+                text, engine = read_image(up.getvalue(), up.name)
+            st.session_state["vision_engine::" + key] = engine
+        else:
+            from src.file_intake import extract_text_from_upload
+            with st.spinner("🔎 문서에서 글자를 읽는 중입니다…"):
+                text, _kind = extract_text_from_upload(up.name, up.getvalue())
         if not (text or "").strip():
-            return None, ("사진에서 글자를 찾지 못했어요. 더 밝고 또렷하게, "
-                          "글자가 크게 보이도록 다시 찍어 올려 주세요.")
+            return None, ("사진에서 내용을 읽지 못했어요. 더 밝고 또렷하게, "
+                          "글자가 크게 보이도록 다시 올려 주세요.")
         st.session_state[key] = text
         return text, None
     except Exception as e:
@@ -1343,10 +1839,8 @@ def chat_uploader():
             if err:
                 st.warning(err)
             elif attach_text:
-                st.success(f"✅ '{up.name}' 에서 글자를 읽었어요. "
-                           "질문을 입력하거나 아래 버튼을 눌러 주세요.")
-                with st.expander("읽은 내용 미리보기"):
-                    st.text(attach_text[:1500])
+                st.success(f"✅ '{up.name}' 분석이 끝났어요. 더 궁금한 점은 아래에 물어보세요.")
+                st.markdown(attach_text[:3000])          # 접지 않고 바로 설명을 보여 준다
                 ask_file = st.button("🔎 이 사진·문서를 설명해 주세요",
                                      use_container_width=True, type="primary")
     return attach_text, ask_file
@@ -1373,16 +1867,22 @@ def chat_area(client):
     # 레이아웃: 대화(위에서 크게) → 빠른버튼 → 입력(아래). 빠른 칩/분야 버튼을
     # 입력창 바로 위로 내려, 대화 내용이 화면 위쪽에서 잘 보이게 한다.
     _concern_banner()              # 통증·위기 표현 시 상담 안내 배너
+    # 어르신이 위아래로 스크롤하지 않도록: ① 입력창은 화면 아래에 고정
+    # ② 질문하면 새 질문·답변 위치로 자동 이동 ③ 빠른 버튼은 접어 두기(대화 시작 전엔 펼침)
+    st.markdown(_CHATBAR_CSS, unsafe_allow_html=True)
     hist_slot = st.container()     # 지난 대화(말풍선 + 출처 캡션) — 위
     live_slot = st.container()     # 새 답변이 토큰 단위로 스트리밍되는 자리
-    quick_replies(client)          # 즉시 전송 칩(처음·서비스목록·온라인신청) — 입력 바로 위
-    quick_actions(client)          # 분야→질문 빠른 버튼 — 입력 바로 위
+    has_chat = bool(st.session_state.get("chat"))
+    with st.expander("💡 자주 묻는 질문 보기 — 눌러서 바로 물어보세요", expanded=not has_chat):
+        quick_replies(client)      # 즉시 전송 칩(처음·서비스목록·온라인신청)
+        quick_actions(client)      # 분야→질문 빠른 버튼
     attach_text, ask_file = chat_uploader()   # 📎 사진·문서 업로드(OCR)
-    with st.form("ai_text", clear_on_submit=True):
-        tc1, tc2 = st.columns([5, 1])
-        q = tc1.text_input("입력", placeholder="궁금하신 내용을 글로 입력하셔도 됩니다",
-                           label_visibility="collapsed")
-        go = tc2.form_submit_button("보내기", use_container_width=True)
+    with st.container(key="chatbar"):          # 화면 아래 고정 입력창
+        with st.form("ai_text", clear_on_submit=True):
+            tc1, tc2 = st.columns([5, 1])
+            q = tc1.text_input("입력", placeholder="궁금하신 내용을 글로 입력하셔도 됩니다",
+                               label_visibility="collapsed")
+            go = tc2.form_submit_button("보내기", use_container_width=True)
 
     pending = st.session_state.pop("pending_q", None)
     pending_attach = None
@@ -1396,9 +1896,51 @@ def chat_area(client):
         _render_history(st.session_state.get("chat", []))
     if pending:
         with live_slot:
+            st.markdown('<div id="live-q"></div>', unsafe_allow_html=True)
+            _scroll_to("#live-q")                  # 답변을 기다리는 동안 새 질문 위치로
             ask_and_stream(client, pending, attach=pending_attach)   # 스트리밍 + 출처 + 첨부근거
+        st.session_state["scroll_last_q"] = True
         st.rerun()                            # 다음 런에서 지난 대화로 정착
+    if st.session_state.pop("scroll_last_q", False):
+        _scroll_to(".bub.user", last=True)    # 방금 한 질문(과 그 아래 답변)이 보이게
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+# AI상담 화면 전용: 입력창을 하단 탭 바로 위에 고정하고, 고정창에 가리지 않도록 아래 여백을 둔다.
+_CHATBAR_CSS = """
+<style>
+  .st-key-chatbar{position:fixed; left:50%; transform:translateX(-50%); bottom:84px;
+    width:min(1100px, calc(100% - 32px)); z-index:9998; background:#ffffff;
+    border:2px solid #d9d4c7; border-radius:16px; padding:8px 10px 2px;
+    box-shadow:0 8px 24px -10px rgba(16,35,61,.35)}
+  .block-container{padding-bottom:190px !important}
+  @media(max-width:640px){
+    .st-key-chatbar{bottom:calc(58px + env(safe-area-inset-bottom)); width:calc(100% - 16px);
+      border-radius:14px; padding:6px 8px 0}
+    /* 폰에서도 입력창과 '보내기'를 한 줄에(세로로 쌓이면 화면을 너무 가림) */
+    .st-key-chatbar [data-testid="stHorizontalBlock"]{flex-wrap:nowrap !important; gap:6px !important}
+    .st-key-chatbar [data-testid="stColumn"]{min-width:0 !important; width:auto !important}
+    .st-key-chatbar [data-testid="stColumn"]:first-child{flex:1 1 auto !important}
+    .st-key-chatbar [data-testid="stColumn"]:last-child{flex:0 0 84px !important}
+    .block-container{padding-bottom:160px !important}
+  }
+</style>
+"""
+
+
+def _scroll_to(selector: str, last: bool = False):
+    """부모 페이지에서 selector 위치로 부드럽게 스크롤(고정 입력창·상단 여백 고려)."""
+    import json
+    import time
+    import streamlit.components.v1 as components
+    pick = "els[els.length-1]" if last else "els[0]"
+    # 매번 내용이 달라야 Streamlit 이 스크립트를 다시 실행한다(같으면 재사용되어 안 움직임)
+    components.html(
+        f"<!-- {time.time_ns()} -->"
+        "<script>setTimeout(function(){try{var d=window.parent.document;"
+        f"var els=d.querySelectorAll({json.dumps(selector)});if(!els.length)return;"
+        f"var el={pick};el.scrollIntoView({{behavior:'smooth',block:'start'}});"
+        "}catch(e){}},350);</script>", height=0)
 
 
 def category_cards(client):
@@ -1431,27 +1973,43 @@ def popular_block():
 
 def notices_block():
     rows = ""
-    for i, (date, title) in enumerate(NOTICES):
+    for i, (date, title, _body, _ask_q) in enumerate(NOTICES):
         new = '<span class="newtag">NEW</span>' if i == 0 else ""
-        rows += (f'<div class="notice"><span class="date">{date}</span>'
-                 f'<span class="t">{title}{new}</span></div>')
-    st.markdown('<div class="sec"><div class="gov-wrap">'
-                '<h2>공지사항</h2><p class="sub">복지 관련 최신 소식입니다.</p>'
+        # 공지를 누르면 상세 내용 페이지로 이동(챗봇이 아니라 공지 상세)
+        rows += (f'<a class="notice" href="{_notice_href(i)}" target="_self">'
+                 f'<span class="date">{date}</span>'
+                 f'<span class="t">{title}{new}</span>'
+                 f'<span class="go" aria-label="자세히">›</span></a>')
+    st.markdown('<div class="sec" id="notices"><div class="gov-wrap">'
+                '<h2>공지사항</h2>'
                 f'{rows}</div></div>', unsafe_allow_html=True)
 
 
+def _sync_state(widget_key: str, state_key: str):
+    """토글 위젯 값 → 앱 상태 키로 복사(on_change 콜백: rerun 전에 실행됨)."""
+    st.session_state[state_key] = st.session_state[widget_key]
+
+
 def footer():
-    st.markdown("""
+    # 시연용 학생 프로젝트임을 분명히 하고(가짜 주소·전화번호 금지), 도움 전화는 실제 번호만.
+    # 개인정보 문구는 '실제 설정'대로 표시한다(클라우드 답변·사진 이해를 켜면 외부 전송됨).
+    import os
+    external = (config.LLM_BACKEND != "ollama") or bool(os.environ.get("GEMINI_API_KEY"))
+    privacy = ("답변 생성(또는 사진 이해)을 위해 질문 내용이 외부 AI 서비스로 전송될 수 있습니다. "
+               "주민번호·계좌번호 같은 민감한 정보는 입력하지 마세요."
+               if external else
+               "질문과 답변은 이 서버 안의 AI 모델로 처리하며 외부 AI 서비스로 보내지 않습니다.")
+    st.markdown(f"""
     <div class="foot"><div class="gov-wrap">
       <div class="cols">
-        <div><b>대전노인복지HUB</b>대전광역시 서구 둔산로 100<br>
-             노인복지과 042-000-0000</div>
+        <div><b>대전노인복지HUB</b>학생 프로젝트 시연 서비스<br>
+             (대전광역시 공식 서비스가 아닙니다)</div>
         <div><b>바로가기</b>기초연금 · 노인맞춤돌봄<br>치매안심센터 · 방문건강관리</div>
-        <div><b>상담전화</b>복지상담 129<br>자살예방상담 109 (24시간)</div>
-        <div><b>이용안내</b>개인정보처리방침<br>웹 접근성 안내 · 이용약관</div>
+        <div><b>도움이 필요할 때</b>보건복지상담센터 129<br>자살예방 상담전화 109 · 응급 119 (24시간)</div>
+        <div><b>자료 출처</b>보건복지부 · 대전광역시 공개 자료<br>정확한 내용은 주민센터에서 확인하세요</div>
       </div>
-      <div class="copy">본 서비스는 모든 처리를 기기 내에서 수행하며 대화 내용을 외부로 전송하지 않습니다.
-        © 2026 Daejeon Welfare Portal (demo).</div>
+      <div class="copy">{privacy}
+        © 2026 AI프로젝트2 8조 (시연용).</div>
     </div></div>
     """, unsafe_allow_html=True)
 
@@ -1586,70 +2144,19 @@ def voice_conversation(client):
         orbset("listen", "듣고 있어요…")
 
 
-def _go_home():
-    # Safe way to change the sidebar radio: set its keyed state in a callback,
-    # before the widget is re-instantiated on the next run.
-    st.session_state["view"] = "대전노인복지HUB (어르신)"
-
-
-def admin_view(client):
+def admin_screen():
+    """관리자(사회복지사) 화면 — 모든 어르신의 이상신호를 DB 에서 읽어 모니터링한다.
+    일반 어르신 계정에는 이 화면으로 가는 메뉴가 없다(관리자 계정으로 로그인해야 보임)."""
+    import html as _html
+    inject_css()
     st.markdown('<div class="gov-wrap sec">', unsafe_allow_html=True)
-    st.button("← 어르신 화면으로 돌아가기", on_click=_go_home, type="primary")
-    st.markdown('<h2>관리자 대시보드 · 이상신호 모니터</h2>'
-                '<p class="sub">어르신 화면에는 보이지 않는 배경 모니터링입니다.</p>',
-                unsafe_allow_html=True)
-
-    # ── 키워드 감지 알림 (아파·불편해·도와줘 등) ──────────────────────────
-    alerts = st.session_state.get("admin_alerts", [])
-    n_crisis = sum(1 for a in alerts if a["level"] == "위기")
-    st.markdown("### 🚨 키워드 감지 알림")
-    a1, a2, a3 = st.columns(3)
-    a1.metric("총 알림", f"{len(alerts)}건")
-    a2.metric("위기", f"{n_crisis}건")
-    a3.metric("주의", f"{len(alerts) - n_crisis}건")
-    if st.button("알림 비우기", key="clear_admin_alerts"):
-        st.session_state["admin_alerts"] = []
-        st.rerun()
-    if alerts:
-        for a in alerts[:30]:
-            cls = "crisis" if a["level"] == "위기" else ""
-            ic = "🆘" if a["level"] == "위기" else "⚠️"
-            st.markdown(
-                f'<div class="warn-banner {cls}" style="align-items:flex-start">'
-                f'<span class="ic">{ic}</span><div>'
-                f'<b>[{a["level"]}] {a["name"]} 님</b> '
-                f'<span style="color:#8493ac;font-size:.9rem">· {a["time"]}'
-                f'{" · 키워드: " + a["keyword"] if a.get("keyword") else ""}</span><br>'
-                f'<span style="font-size:1.06rem">“{a["message"]}”</span>'
-                f'</div></div>', unsafe_allow_html=True)
-    else:
-        st.caption("감지된 키워드 알림이 없습니다.")
-    st.divider()
-
-    s = st.session_state.get("state") or {}
-    c1, c2, c3 = st.columns(3)
-    status = ("긴급 확인" if s.get("crisis") else
-              "주의" if s.get("is_abnormal") else "정상")
-    c1.metric("상태", status)
-    c2.metric("평균 부정감정", f"{s.get('avg_negative', 0.0):.2f}")
-    c3.metric("대화 횟수", f"{s.get('history_len', 0)}회")
-    counts = s.get("symptom_counts", {})
-    if counts:
-        st.write("**반복 호소 증상:** " + ", ".join(f"{k}({v}회)" for k, v in counts.items()))
-    m = s.get("metrics", {})
-    if m:
-        cc = st.columns(4)
-        cc[0].metric("대화 빈도", f"-{m['freq_drop']:.0%}")
-        cc[1].metric("감정 변화", f"+{m['sentiment_shift']:.2f}")
-        cc[2].metric("외로움 표현", f"+{m['keyword_shift']:.0%}")
-        cc[3].metric("응답 길이", f"-{m['length_drop']:.0%}")
-    st.divider()
-    st.markdown("#### 사회복지사 알림 로그")
-    if st.session_state["alerts"]:
-        for urgency, text in st.session_state["alerts"]:
-            st.warning(f"[{urgency}]\n\n{text}")
-    else:
-        st.caption("아직 알림이 없습니다.")
+    h1, h2 = st.columns([5, 1], vertical_alignment="center")
+    h1.markdown(f'<div style="color:#5c6b86;font-weight:700">👤 {_html.escape(st.session_state.get("auth_user", ""))} '
+                '(관리자)</div>', unsafe_allow_html=True)
+    if h2.button("로그아웃", key="admin_logout", use_container_width=True):
+        _confirm_logout()
+    from src.admin_monitor import render
+    render(exclude=config.ADMIN_USERS)
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -1663,16 +2170,24 @@ def main():
     st.session_state.setdefault("admin_alerts", [])   # 키워드 감지 → 관리자 알림
 
     # 새로고침(카드·칩 클릭 = 전체 페이지 reload) 후에도 로그인 유지:
-    # Streamlit 세션은 reload 시 초기화되므로, URL 의 ?u=<성함> 으로 세션을 복원한다.
+    # Streamlit 세션은 reload 시 초기화되므로 URL 로 세션을 복원하되, 반드시 서명
+    # 토큰(?t=)을 검증한다. ?u=성함 만으로는 복원하지 않아 계정 도용을 막는다.
     if not st.session_state.get("auth_user"):
         _u = st.query_params.get("u")
-        if _u:
+        _t = st.query_params.get("t")
+        if _u and _verify_user_token(_u, _t):
             _load_user_session(_u)
+        elif _u:
+            # 서명 없는/위조된 ?u= 는 무시하고 URL 을 정리(로그인 화면으로).
+            st.query_params.clear()
 
     # 접속 흐름: 로그인 → 내 정보 입력 → (이후) 포털 화면.
     # 로그인·내 정보는 무거운 어시스턴트가 필요 없으므로 바로 뜬다.
     if not st.session_state.get("auth_user"):
         login_screen()
+        return
+    if st.session_state.get("is_admin"):
+        admin_screen()               # 관리자(사회복지사) 계정 → 전체 어르신 이상신호 모니터
         return
     if not st.session_state.get("profile_done"):
         profile_screen()
@@ -1680,6 +2195,17 @@ def main():
 
     # 포털부터 어시스턴트 필요 — 지연 로딩(화면은 먼저 뜨고, 첫 질문에서만 준비).
     client = _LazyClient()
+
+    # 상단 메뉴 링크: ?u=<성함>&tab=<탭> → 그 탭으로 이동(u 는 유지).
+    if "tab" in st.query_params:
+        t = st.query_params["tab"]
+        try:
+            del st.query_params["tab"]
+        except Exception:
+            pass
+        if t in _TABS:
+            st.session_state["tab"] = t
+            st.session_state.pop("mode", None)          # 음성 모드였으면 일반 화면으로
 
     # A category card links to ?u=<성함>&ask=<question>; handle ask, keep u(로그인).
     if "ask" in st.query_params:
@@ -1692,6 +2218,26 @@ def main():
             st.session_state["pending_q"] = q.strip()   # 상담 탭에서 스트리밍으로 답변
             st.session_state["tab"] = "talk"   # 질문하면 상담 화면으로 전환
 
+    # 공지사항 상세 보기: ?notice=<번호> → 상세 화면(챗봇 아님)
+    if "notice" in st.query_params:
+        try:
+            st.session_state["notice"] = int(st.query_params["notice"])
+        except (TypeError, ValueError):
+            pass
+        try:
+            del st.query_params["notice"]
+        except Exception:
+            pass
+
+    # 맞춤 복지 상세 보기: ?w=<복지 이름> → 상세 화면(챗봇 아님)
+    if "w" in st.query_params:
+        st.session_state["welfare"] = st.query_params["w"]
+        st.session_state["tab"] = "mywelfare"
+        try:
+            del st.query_params["w"]
+        except Exception:
+            pass
+
     with st.sidebar:
         st.subheader("화면 설정")
         st.caption("글자 크기")
@@ -1702,20 +2248,15 @@ def main():
             st.session_state["font_scale"] = 1.18; st.rerun()
         if b3.button("가++", use_container_width=True):
             st.session_state["font_scale"] = 1.38; st.rerun()
-        st.session_state["high_contrast"] = st.toggle(
-            "고대비 모드", value=st.session_state.get("high_contrast", False))
-        st.session_state["voice_mode"] = st.toggle(
+        # on_change 콜백은 다음 실행(rerun) '전에' 값을 반영한다 → 화면 맨 위 inject_css 가
+        # 바뀐 값을 바로 본다(예전엔 한 박자 늦어 고대비를 끌 때 두 번 눌러야 했음).
+        st.toggle("고대비 모드", value=st.session_state.get("high_contrast", False),
+                  key="hc_toggle", on_change=_sync_state, args=("hc_toggle", "high_contrast"))
+        st.toggle(
             "음성으로 답변 듣기", value=st.session_state.get("voice_mode", False),
+            key="voice_toggle", on_change=_sync_state, args=("voice_toggle", "voice_mode"),
             help=f"로컬 TTS: {get_tts().backend or '사용 불가'}")
         st.divider()
-        view = st.radio("화면", ["대전노인복지HUB (어르신)", "관리자"], key="view")
-        _na = len(st.session_state.get("admin_alerts", []))
-        if _na:
-            st.markdown(f'<div style="background:#fdecec;border:1px solid #f3b4b4;'
-                        f'border-radius:10px;padding:8px 12px;color:#8a1c13;'
-                        f'font-weight:700;font-size:.9rem;margin:-4px 0 6px">'
-                        f'🚨 관리자 알림 {_na}건 — 관리자 화면에서 확인</div>',
-                        unsafe_allow_html=True)
         st.caption("상담 방식")
         if st.button("텍스트·검색", use_container_width=True):
             st.session_state["mode"] = "text"; st.rerun()
@@ -1734,16 +2275,12 @@ def main():
         if st.button("내 정보 수정", use_container_width=True):
             st.session_state["profile_done"] = False; st.rerun()
         if st.button("로그아웃", use_container_width=True):
-            _logout()
+            _confirm_logout()            # 바로 나가지 않고 한 번 더 확인
 
     inject_css()
     inject_pwa()
 
-    if view == "관리자":
-        header_nav(client)
-        admin_view(client)
-        footer()
-    elif st.session_state.get("mode") == "voice":
+    if st.session_state.get("mode") == "voice":
         header_nav(client)
         voice_conversation(client)   # hands-free ChatGPT-style voice loop
     else:
@@ -1751,7 +2288,13 @@ def main():
         tab = st.session_state.get("tab", "home")
         bottom_tab_bar(tab)      # 폰 하단 탭바(홈·맞춤복지·AI상담·서비스) — 블로킹 전에
 
-        if tab == "mywelfare":
+        if st.session_state.get("notice") is not None:
+            notice_detail(client, st.session_state["notice"])   # 공지 상세(챗봇 아님)
+            footer()
+        elif tab == "mywelfare" and st.session_state.get("welfare"):
+            welfare_detail(st.session_state["welfare"])   # 맞춤 복지 상세(챗봇 아님)
+            footer()
+        elif tab == "mywelfare":
             if _profile_has_info(st.session_state.get("profile", {})):
                 my_welfare_cards()   # 내 맞춤 복지(카드) — 프로필 기반 추천
             else:

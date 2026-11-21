@@ -16,7 +16,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Tuple
 
 from . import config
 from .embeddings import EmbeddingModel
@@ -30,11 +30,22 @@ from .embeddings import EmbeddingModel
 _OCR_MIN_CHARS_PER_PAGE = 20
 
 
-def load_text_from_pdf(pdf_path: Path) -> str:
-    """Extract text from a PDF using pdfplumber, with OCR fallback.
+_YEAR_RE = re.compile(r"(20\d{2})")
 
-    Digital PDFs are read directly. Scanned/image pages (little or no
-    extractable text) are passed to Tesseract Korean OCR when it is installed.
+
+def _doc_date(name: str) -> str:
+    """Pull a publication year (e.g. 2025) from the file name for citation.
+    Returns '' when none is found. Cheap, deterministic, no file read."""
+    m = _YEAR_RE.search(name or "")
+    return m.group(1) if m else ""
+
+
+def load_pages_from_pdf(pdf_path: Path) -> List[Tuple[int, str]]:
+    """Extract a PDF as [(page_number_1based, text), …] with OCR fallback.
+
+    Keeping page boundaries lets each chunk carry the page it came from, so a
+    citation can point the reader to "…pdf · p.12" instead of just the file.
+    Digital pages are read directly; scanned/image pages go to Tesseract OCR.
     """
     import pdfplumber
     parts: List[str] = []
@@ -51,7 +62,12 @@ def load_text_from_pdf(pdf_path: Path) -> str:
         for i, text in ocr_text.items():
             parts[i] = text
     parts = _strip_running_headers(parts)
-    return "\n".join(parts)
+    return [(i + 1, t) for i, t in enumerate(parts)]
+
+
+def load_text_from_pdf(pdf_path: Path) -> str:
+    """Whole-PDF text (backward-compatible). Pages joined with newlines."""
+    return "\n".join(t for _, t in load_pages_from_pdf(pdf_path))
 
 
 def _strip_running_headers(pages: List[str]) -> List[str]:
@@ -206,22 +222,32 @@ def _table_rows_to_text(rows: List[List[str]]) -> List[str]:
 
 
 def load_documents(docs_dir: Path = config.WELFARE_DOCS_DIR) -> List[dict]:
-    """Load every supported file in docs_dir. Returns [{source, text}]."""
+    """Load every supported file in docs_dir.
+
+    Returns [{source, date, segments}] where ``segments`` is a list of
+    (page | None, text). 발행 연도(date)는 인용에 쓰지만, PDF는 전체 문서를 한
+    덩어리로 청킹한다(page=None): 쪽 단위 청킹이 페이지 경계에서 문맥을 잘라
+    일부 주제의 검색 성능을 낮췄기 때문(Hit@3 75%→73%). 쪽 번호 인용이 필요하면
+    문맥을 자르지 않는 방식으로 별도 도입할 것.
+    """
     docs: List[dict] = []
     for path in sorted(docs_dir.glob("*")):
         # 명단/현황 스프레드시트는 검색 노이즈 → 색인 제외(config.RAG_EXCLUDE_DOCS).
         if any(tok in path.name for tok in config.RAG_EXCLUDE_DOCS):
             continue
-        if path.suffix.lower() == ".pdf":
-            text = load_text_from_pdf(path)
-        elif path.suffix.lower() in {".md", ".txt"}:
-            text = path.read_text(encoding="utf-8")
-        elif path.suffix.lower() in {".csv", ".xls", ".xlsx"}:
-            text = load_text_from_table(path)
+        suffix = path.suffix.lower()
+        if suffix == ".pdf":
+            segments: List[Tuple[Optional[int], str]] = [(None, load_text_from_pdf(path))]
+        elif suffix in {".md", ".txt"}:
+            segments = [(None, path.read_text(encoding="utf-8"))]
+        elif suffix in {".csv", ".xls", ".xlsx"}:
+            segments = [(None, load_text_from_table(path))]
         else:
             continue
-        if text.strip():
-            docs.append({"source": path.name, "text": text})
+        segments = [(pg, t) for pg, t in segments if t and t.strip()]
+        if segments:
+            docs.append({"source": path.name, "date": _doc_date(path.name),
+                         "segments": segments})
     return docs
 
 
@@ -349,6 +375,18 @@ class Retrieved:
     text: str
     source: str
     score: float
+    page: Optional[int] = None     # PDF 쪽 번호(있으면 인용에 표시)
+    date: str = ""                 # 발행 연도(파일명 기준)
+
+
+def cite_label(r: "Retrieved") -> str:
+    """사람이 읽는 출처 표기: '[2025] 파일명 · p.12' (연도/쪽이 있으면 덧붙임)."""
+    label = r.source
+    if r.page:
+        label += f" · p.{r.page}"
+    if r.date:
+        label = f"[{r.date}] {label}"
+    return label
 
 
 class _InMemoryStore:
@@ -374,7 +412,8 @@ class _InMemoryStore:
             ((cos(embedding, v), d, m) for v, d, m in zip(self._vecs, self._docs, self._meta)),
             key=lambda t: t[0], reverse=True,
         )[:top_k]
-        return [Retrieved(text=d, source=m.get("source", "?"), score=float(s))
+        return [Retrieved(text=d, source=m.get("source", "?"), score=float(s),
+                          page=m.get("page"), date=m.get("date", ""))
                 for s, d, m in scored]
 
     def count(self):
@@ -389,6 +428,7 @@ class RagPipeline:
         self._collection = self._init_chroma()
         self.use_rerank = use_rerank
         self._reranker = None            # loaded lazily on first retrieve
+        self.last_label = None           # 마지막 retrieve() 의 질문 라벨(설명·로그용)
         self.index_stats: dict = {}      # per-file breakdown set by index()
 
     @property
@@ -447,15 +487,22 @@ class RagPipeline:
         dropped = 0
         for doc in documents:
             kept = 0
-            for chunk in chunk_text(doc["text"]):
-                if is_low_quality(chunk):
-                    dropped += 1
-                    per_source_dropped[doc["source"]] += 1
-                    continue
-                chunks.append(chunk)
-                metadatas.append({"source": doc["source"], "chunk": kept})
-                ids.append(f"{doc['source']}::{kept}")
-                kept += 1
+            date = doc.get("date", "")
+            for page, seg_text in doc["segments"]:
+                for chunk in chunk_text(seg_text):
+                    if is_low_quality(chunk):
+                        dropped += 1
+                        per_source_dropped[doc["source"]] += 1
+                        continue
+                    chunks.append(chunk)
+                    meta = {"source": doc["source"], "chunk": kept}
+                    if page is not None:
+                        meta["page"] = page          # 인용에 '· p.N' 표시
+                    if date:
+                        meta["date"] = date          # 발행 연도(파일명 기준)
+                    metadatas.append(meta)
+                    ids.append(f"{doc['source']}::{kept}")
+                    kept += 1
             per_source_kept[doc["source"]] = kept
 
         # Files present but not indexed (unsupported type, or empty after load).
@@ -506,28 +553,76 @@ class RagPipeline:
             for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0],
                                        res["distances"][0]):
                 out.append(Retrieved(text=doc, source=meta.get("source", "?"),
-                                     score=1.0 - float(dist)))  # cosine dist -> sim
+                                     score=1.0 - float(dist),  # cosine dist -> sim
+                                     page=meta.get("page"), date=meta.get("date", "")))
             return out
         return self._collection.query(q_emb, n)
+
+    # -- 질문 라벨(src/topic_labels.py) -----------------------------------
+    _label_fallback = None          # 프로세스당 1회 학습(학습 질문 유사도 분류기)
+
+    @classmethod
+    def _get_label_fallback(cls):
+        if cls._label_fallback is None:
+            cls._label_fallback = False
+            if config.RAG_LABEL_FALLBACK:
+                try:
+                    import json
+                    from .topic_labels import GOLD_TO_LABEL, SimilarQuestionFallback
+                    rows = [json.loads(x) for x in config.LABEL_TRAIN_FILE.read_text(
+                        encoding="utf-8").splitlines() if x.strip()]
+                    rows = [r for r in rows if r.get("topic") in GOLD_TO_LABEL]
+                    cls._label_fallback = SimilarQuestionFallback(k=1).fit(
+                        [r["q"] for r in rows], [GOLD_TO_LABEL[r["topic"]] for r in rows])
+                except Exception as exc:                     # sklearn 없음·파일 없음 → 키워드만
+                    print(f"[rag] 라벨 유사 질문 분류 생략 ({exc.__class__.__name__})")
+        return cls._label_fallback or None
+
+    def question_label(self, question: str):
+        """질문 → LabelResult (항상 14개 라벨 중 하나, 판정 근거 포함)."""
+        from .topic_labels import classify
+        return classify(question, self._get_label_fallback(), 0.0)
 
     def retrieve(self, question: str, top_k: int = config.RAG_TOP_K) -> List[Retrieved]:
         """Retrieve a candidate pool by embedding, then rerank down to top_k.
 
-        With reranking disabled/unavailable this is a plain top_k embedding
-        search, so behaviour degrades gracefully.
+        순위 = 관련성 점수 + RAG_KEYWORD_BOOST · [조각이 질문 라벨의 키워드 포함].
+        돌려주는 score 는 가점 없는 관련성 점수라 관련성 게이트의 의미는 그대로다.
+        With reranking disabled/unavailable this is a plain embedding search
+        (with the same label boost), so behaviour degrades gracefully.
         """
-        if not self.use_rerank:
-            return self._vector_search(question, top_k)
-        pool = max(top_k, config.RAG_CANDIDATES)
+        pool = max(top_k, config.RAG_CANDIDATES) if (self.use_rerank or
+                                                     config.RAG_KEYWORD_BOOST > 0) else top_k
         candidates = self._vector_search(question, pool)
-        rr = self.reranker
-        if not (rr and rr.available) or len(candidates) <= top_k:
-            return candidates[:top_k]
-        order = rr.rerank(question, [c.text for c in candidates])
+        if not candidates:
+            return []
+        scores = [c.score for c in candidates]
+        rr = self.reranker if self.use_rerank else None
+        reranked = bool(rr and rr.available and len(candidates) > 1)
+        if reranked:
+            for idx, s in rr.rerank(question, [c.text for c in candidates]):
+                scores[idx] = s
+        boost = [0.0] * len(candidates)
+        self.last_label = None
+        if config.RAG_KEYWORD_BOOST > 0:
+            try:
+                from .topic_labels import TOPICS, chunk_has_topic
+                lab = self.question_label(question)
+                self.last_label = lab
+                if lab.label in TOPICS:
+                    boost = [config.RAG_KEYWORD_BOOST if chunk_has_topic(c.text, lab.label)
+                             else 0.0 for c in candidates]
+            except Exception as exc:                         # 라벨 실패해도 검색은 계속
+                print(f"[rag] 라벨 가점 생략 ({exc.__class__.__name__})")
+        order = sorted(range(len(candidates)), key=lambda i: scores[i] + boost[i], reverse=True)
         out = []
-        for idx, score in order[:top_k]:
-            c = candidates[idx]
-            out.append(Retrieved(text=c.text, source=c.source, score=score))
+        for i in order[:top_k]:
+            c = candidates[i]
+            if reranked:
+                out.append(Retrieved(text=c.text, source=c.source, score=scores[i]))
+            else:
+                c.score = scores[i]
+                out.append(c)
         return out
 
 

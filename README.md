@@ -5,12 +5,19 @@
 관련 질문을 하면 **대전 공공문서에 근거해(RAG) LLM이 답변**하고, 대화 속 반복
 증상 호소나 정서적 이상신호를 감지해 **사회복지사에게 알림**을 보냅니다.
 
-> **구성 원칙**: 현재 배포는 **온디바이스(로컬 Ollama) LLM — EXAONE 3.5 2.4B** 와
-> **RAG**로 답변을 생성합니다(개인정보가 외부로 나가지 않음). LLM은 언어 능력을,
-> RAG는 대전 공공데이터에 대한 **근거**를 제공해 환각을 막습니다. 검색·재랭킹·
-> 음성인식·이상신호 분석도 모두 로컬에서 수행합니다. 답변 모델은 `LLM_BACKEND`
-> 로 교체할 수 있어 클라우드 API(OpenAI·Gemini)로도 전환 가능하지만, **평가·시연에
-> 사용한 모델은 온디바이스 EXAONE 3.5 2.4B** 입니다.
+> **구성 원칙**: 답변 모델은 `LLM_BACKEND` 로 **전환 가능**합니다 —
+> ① **온디바이스(로컬 Ollama) EXAONE 3.5 2.4B** = 개인정보가 외부로 안 나감(프라이버시),
+> ② **클라우드 Gemini**(무료 키) = 더 높은 품질 + **사진 이해(vision)**. RAG가 대전
+> 공공데이터 **근거**로 환각을 막는 건 두 경우 모두 동일합니다. 검색·재랭킹·음성인식·
+> 이상신호 분석은 항상 로컬에서 수행합니다.
+>
+> **Gemini 전환:** [Google AI Studio](https://aistudio.google.com/apikey)에서 무료 키를 받아
+> ```bash
+> LLM_BACKEND=gemini GEMINI_API_KEY=발급받은키 streamlit run app.py
+> ```
+> 키가 있으면 업로드한 **사진은 Gemini vision 으로 '보고'** 답하고(글자+맥락), 민감
+> 문서는 on-device OCR 로 처리하도록 둘 수 있습니다. 평가 리포트(`eval_report.md`)는
+> 실행 시 사용한 백엔드를 함께 기록합니다.
 
 ---
 
@@ -253,6 +260,15 @@ RAG_REINDEX=1 python eval_ground_truth.py     # 검색 Hit@1/Hit@3 · 범위 밖
 
   ```bash
   EVAL_ANSWERS=1 USE_LLM_SIGNAL=1 python eval_ground_truth.py
+  ```
+- **엄밀한 검색 지표(Recall@3 · MRR)**: Hit@K 보다 엄밀하게, 사람이 라벨링한
+  정답 근거(문서·쪽)를 상위 K개에 가져오는지 측정합니다. 라벨은 (문서, 쪽) 단위라
+  재색인에도 안정적입니다.
+
+  ```bash
+  python make_recall_labels.py     # 1) 라벨 풀 생성(data/eval/recall_pool.jsonl)
+  #   2) recall_pool.jsonl 에서 정답 근거 줄의 "relevant" 를 1 로 표시(사람 라벨링)
+  python eval_recall.py            # 3) Recall@3 · Precision@3 · MRR
   ```
 - **한계(정직한 고지)**: 평가셋은 자체 제작(독립 held-out 미구성), 검색 지표는 키워드
   부분일치 기반입니다. 답변 품질(충실성·사실성)은 사람/LLM 평가로 보강이 필요합니다.

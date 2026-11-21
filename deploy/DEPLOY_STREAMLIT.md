@@ -67,7 +67,7 @@ tail -f ~/streamlit.log
 
 ## 6. 브라우저
 ```
-http://15.152.78.38:8003
+http://16.208.136.61:8003
 ```
 → 로그인 → 내 정보 → 포털(음성 orb · 복지 서비스 바로가기 · 맞춤 상담)
 
@@ -80,9 +80,45 @@ pkill -f "streamlit run app.py"
 # 다시 5번 실행
 ```
 
-## systemd 로 상시 실행(발표 필수) — 선택
-`deploy/app_personal.service` 를 참고해 streamlit 용 유닛을 만들면 된다
-(ExecStart 를 위 5번 streamlit 명령으로, Environment 에 LLM_BACKEND=ollama).
+## systemd 로 상시 실행 (발표 필수)
+SSH 를 닫거나 앱이 죽어도, 서버를 재부팅해도 앱이 **자동으로 다시 켜지게** 한다.
+유닛 파일: `deploy/welfarehub-8003.service` (계정 ubuntu · 폴더 `~/team/novem/ondevice_llm` · 포트 8003).
+
+```bash
+cd ~/team/novem/ondevice_llm
+git pull origin main
+# 0) streamlit 이 /usr/bin/python3 에 설치돼 있는지 확인 (버전이 나오면 OK)
+/usr/bin/python3 -m streamlit version
+# 1) nohup 으로 띄운 기존 앱 끄기 (포트 8003 충돌 방지)
+pkill -f "streamlit run app.py"
+# 2) 설치 + 자동 시작 등록
+sudo cp deploy/welfarehub-8003.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now welfarehub-8003
+# 3) 확인 — active (running) 이면 성공
+systemctl status welfarehub-8003 --no-pager
+```
+
+| 할 일 | 명령 |
+|---|---|
+| 로그 보기 | `journalctl -u welfarehub-8003 -f` |
+| 코드 업데이트 후 재시작 | `git pull origin main && sudo systemctl restart welfarehub-8003` |
+| 끄기 / 켜기 | `sudo systemctl stop welfarehub-8003` / `sudo systemctl start welfarehub-8003` |
+| 자동 시작 해제 | `sudo systemctl disable --now welfarehub-8003` |
+
+> ⚠️ systemd 로 돌리는 동안에는 `nohup streamlit run ...` 을 **같이 띄우지 않는다**(포트 충돌).
+> 업데이트는 항상 `sudo systemctl restart welfarehub-8003` 로.
+
+**(선택) Gemini 키** — 저장소가 아니라 서버에만, 관리자만 읽게 둔다:
+```bash
+echo 'GEMINI_API_KEY=새로_발급한_키' | sudo tee /etc/welfarehub.env >/dev/null
+sudo chmod 600 /etc/welfarehub.env
+sudo systemctl restart welfarehub-8003
+```
+키를 빼려면 `sudo rm /etc/welfarehub.env && sudo systemctl restart welfarehub-8003`
+(키가 없으면 사진은 서버 안 qwen2.5vl 이 읽는다).
+
+**발표 당일 아침 체크:** `systemctl status welfarehub-8003` · `ollama list` · 휴대폰으로 접속해 질문 1개.
 
 ---
 
