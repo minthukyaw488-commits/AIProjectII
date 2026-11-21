@@ -73,6 +73,10 @@ ANSWER_SYSTEM_PROMPT = (
     "7) 전화번호·주소·기관 이름은 참고 자료에 그대로 적힌 것만 씁니다. 자료에 없으면 "
     "지어내지 말고 '가까운 주민센터(행정복지센터)'로 안내합니다. '예시'라는 말이나 "
     "괄호 속 설명 표시를 답변에 쓰지 않습니다.\n"
+    "8) 질문 속 숫자·나이·금액·요일·조건을 그대로 믿지 않습니다. 참고 자료와 다르면 "
+    "'아닙니다. 자료에는 ○○로 되어 있습니다'처럼 먼저 바로잡고, 자료에 없으면 "
+    "'자료에서 확인되지 않습니다'라고 말합니다. 질문에 나온 제도·사업 이름이 참고 자료에 "
+    "없으면 그 제도가 있다고 가정하지 말고, 다른 제도의 신청 방법을 옮겨 붙이지 않습니다.\n"
     "[답변 모양 참고 — 아래 내용은 모양만 참고하고 그대로 옮기지 않습니다]\n"
     "질문: 기초연금은 어떻게 신청하나요?\n"
     "답변:\n"
@@ -180,8 +184,20 @@ _EXAMPLE_RE = _re.compile(r"\(\s*예시\s*\)|예시\s*[)）:：]\s*|\[\s*예시\
 PHONE_FALLBACK_LINE = "- 정확한 연락처는 **가까운 주민센터(행정복지센터)** 또는 **보건복지상담센터 129**에 확인해 주세요."
 
 
+# 지역번호 + 한 묶음만 남은 '번호 조각'(예: "042-6773"). 완전한 번호가 아니라 _PHONE_RE 에
+# 걸리지 않지만, 어르신이 그대로 걸면 엉뚱한 곳으로 간다(평가에서 실제로 나옴).
+_PHONE_FRAG_RE = _re.compile(r"(?<![\d-])0\d{1,2}[-.)]\d{3,4}(?![-.\s]?\d)")
+
+
 def _digits(s: str) -> str:
     return _re.sub(r"\D", "", s)
+
+
+def _mostly_foreign(text: str) -> bool:
+    """한글보다 영문이 많은 답(작은 모델이 가끔 영어로 답함) → 어르신께 내보내지 않는다."""
+    ko = len(_re.findall(r"[가-힣]", text or ""))
+    en = len(_re.findall(r"[A-Za-z]", text or ""))
+    return en > 20 and en > ko
 
 
 def ground_answer(text: str, contexts) -> str:
@@ -194,12 +210,16 @@ def ground_answer(text: str, contexts) -> str:
     """
     if not text:
         return text
+    if _mostly_foreign(text):
+        return OFF_DOMAIN_REPLY
     t = _EXAMPLE_RE.sub("", text)
     allowed = {_digits(m) for c in (contexts or []) for m in _PHONE_RE.findall(c or "")}
     kept, dropped = [], False
     for line in t.split("\n"):
         nums = _PHONE_RE.findall(line)
-        if nums and any(_digits(n) not in allowed for n in nums):
+        frags = _PHONE_FRAG_RE.findall(line)
+        if (nums and any(_digits(n) not in allowed for n in nums)) or \
+                any(not any(_digits(f) in a for a in allowed) for f in frags):
             dropped = True
             continue
         kept.append(line.rstrip())
@@ -207,6 +227,72 @@ def ground_answer(text: str, contexts) -> str:
     if dropped and PHONE_FALLBACK_LINE not in out:
         out = (out + "\n" + PHONE_FALLBACK_LINE).strip()
     return out
+
+
+# ── ① 없는 제도 확인(생성 전, 결정적) ──────────────────────────────────────────
+# 평가(eval_adversarial.py)에서 "무료 해외여행 지원금 신청법?" 같은 없는 제도에, 모델이
+# 검색된 '다른 제도'의 신청 절차를 그대로 옮겨 붙여 사실처럼 답했다. 그래서 질문이
+# 특정 제도·사업을 가리키면 그 이름(수식어)이 검색된 근거에 실제로 있는지 먼저 본다.
+# 없으면 LLM 을 부르지 않고 "자료에서 확인되지 않는 제도" 로 안내한다.
+_SERVICE_HEADS = ("사업", "서비스", "제도", "지원금", "지급", "배달", "바우처", "혜택", "프로그램")
+_RARE_HEADS = ("보너스", "대출", "면제", "대여", "파견")       # 그 자체가 내용어인 머리말
+_STOP_TERMS = {"대전", "대전시", "대전광역시", "어르신", "노인", "독거노인", "무료", "전용", "지원",
+               "신청", "방법", "어떻게", "어디서", "어디", "언제", "우리", "동네", "특별", "일시",
+               "현금", "이상", "매달", "매일", "정부", "국가", "관련", "복지", "새로운", "요즘",
+               "여름", "겨울", "봄", "가을", "올해", "내년", "작년", "세대", "가구", "제공",
+               # 동사 활용형(맨 형태로 남아 명사처럼 보이는 것)
+               "나눠", "보내", "가져다", "도와", "챙겨", "해줘", "알려"}
+# 복지 일반 어휘 — 검색 근거에 똑같은 글자가 없어도 실재 제도일 수 있으니 확인 대상에서 뺀다.
+_SAFE_TERMS = {"돌봄", "요양", "간호", "방문", "급식", "식사", "도시락", "반찬", "목욕", "병원", "동행",
+               "상담", "교육", "검진", "검사", "일자리", "교통", "주거", "난방", "냉방", "안부", "건강",
+               "장비", "생활", "가사", "이동", "주간", "보호", "재가", "치매", "연금", "의료", "약",
+               "안전", "응급", "여가", "문화", "운동", "경로", "공익", "활동", "사회",
+               # 어르신이 흔히 쓰는 생활어(문서 용어와 글자가 달라도 실재 제도)
+               "전기세", "가스비", "기름값", "난방비", "냉방비", "밥", "끼니", "보건소", "주민센터"}
+_PARTICLE_END = ("에서", "으로", "에게", "은", "는", "이", "가", "을", "를", "에", "의", "도", "로",
+                 "와", "과", "만", "요")
+UNSUPPORTED_SERVICE_REPLY = (
+    "말씀하신 **'{term}'** 관련 제도는 제가 가진 복지 자료에서 확인되지 않아요.\n"
+    "- 있지 않은 제도를 안내해 드리면 안 되기 때문에, 신청 방법은 말씀드리지 않을게요.\n"
+    "- 비슷한 지원이 있는지는 가까운 **주민센터(행정복지센터)** 또는 "
+    "**보건복지상담센터 129**에 꼭 확인해 주세요."
+)
+
+
+def _service_terms(question: str) -> list[str]:
+    """질문에서 '제도 이름을 이루는 내용어' 후보(맨 명사만)를 뽑는다."""
+    from .topic_labels import TOPIC_KEYWORDS
+    known = {k for ks in TOPIC_KEYWORDS.values() for k in ks}
+    toks = _re.findall(r"[가-힣A-Za-z0-9]+", question or "")
+    cands: list[str] = []
+    for i, tok in enumerate(toks):
+        head = next((h for h in _SERVICE_HEADS + _RARE_HEADS if h in tok), None)
+        if not head:
+            continue
+        pre = tok[: tok.index(head)]                     # "노인맞춤돌봄서비스를" → "노인맞춤돌봄"
+        window = ([pre] if pre else []) + toks[max(0, i - 3): i]
+        if head in _RARE_HEADS:
+            window.append(head)
+        for w in window:
+            if any(w.endswith(e) for e in _PARTICLE_END) or _re.search(r"\d", w):
+                continue                                 # 조사·어미가 붙은 말, 숫자는 수식어 아님
+            if len(w) < 2 or w in _STOP_TERMS or w in _SAFE_TERMS:
+                continue
+            if any(w in k or k in w for k in known) or any(s in w for s in _SAFE_TERMS):
+                continue
+            cands.append(w)
+    return list(dict.fromkeys(cands))
+
+
+def unsupported_service_term(question: str, contexts) -> str | None:
+    """질문이 가리키는 제도 이름이 검색 근거에 없으면 그 낱말을 돌려준다(없으면 None)."""
+    ctx = "".join("".join((c or "").split()) for c in (contexts or []))
+    if not ctx:
+        return None
+    for w in _service_terms(question):
+        if w not in ctx:
+            return w
+    return None
 
 
 # Warm, chatbot-like replies for greetings / small talk (no RAG, no refusal).

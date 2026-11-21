@@ -16,6 +16,7 @@ from src import config
 from src.tts import TextToSpeech
 from src.worker import AssistantClient
 from src.crisis import CRISIS_PATTERNS, CRISIS_REPLY, is_crisis
+from src.crisis import normalize as _crisis_norm
 
 st.set_page_config(page_title="대전노인복지HUB", layout="wide",
                    initial_sidebar_state="expanded")
@@ -769,7 +770,7 @@ def _concern_banner():
             break
     if not last:
         return
-    t = last.replace(" ", "")
+    t = _crisis_norm(last)          # 띄어쓰기 제거 + "혼자 살면"⊃'자살' 오탐 보정
     crisis = any(k in t for k in _CRISIS)
     if crisis:
         st.markdown(
@@ -792,7 +793,7 @@ def _record_signal(q: str, r: dict | None = None):
     한 메시지가 두 번 저장되지 않도록 한다(중복 방지). 세션(앱 내 관리자 토글)과
     DB(별도 관리자 앱) 양쪽에 1건씩만 남긴다."""
     import time
-    t = q.replace(" ", "")
+    t = _crisis_norm(q)             # 띄어쓰기 제거 + "혼자 살면"⊃'자살' 오탐 보정
     crisis = any(k in t for k in _CRISIS)
     concern_kw = any(k in t for k in _CONCERN)
     pipe = bool(r and r.get("alert"))

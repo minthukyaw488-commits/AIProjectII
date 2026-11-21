@@ -55,6 +55,10 @@ RAG_KEYWORD_BOOST = float(os.environ.get("RAG_KEYWORD_BOOST", "0.1"))
 RAG_LABEL_FALLBACK = os.environ.get("RAG_LABEL_FALLBACK", "1") not in ("0", "", "false", "False")
 LABEL_TRAIN_FILE = DATA_DIR / "eval" / "ground_truth_rag.jsonl"
 
+# 없는 제도 확인(src/llm.unsupported_service_term): 질문 속 제도 이름이 검색 근거에 없으면
+# 생성하지 않고 "자료에서 확인되지 않는 제도" 안내. SERVICE_CHECK=0 으로 끌 수 있다.
+SERVICE_CHECK = os.environ.get("SERVICE_CHECK", "1") not in ("0", "", "false", "False")
+
 # Relevance gate: if the top (reranked) chunk scores below this, the question is
 # off-topic or not covered by the documents. Instead of letting the LLM answer
 # from a weak/wrong chunk (hallucination), return a warm referral. Calibrated

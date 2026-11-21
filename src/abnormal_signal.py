@@ -265,9 +265,10 @@ class AbnormalSignalDetector:
             if c >= self.repeat_threshold:
                 reasons.append(f"'{g}' 관련 호소 {c}회 반복 (기준 {self.repeat_threshold})")
 
-        # 위기 표현: 공용 기준(src/crisis.py, 띄어쓰기 무시) + 기존 설정 키워드.
-        crisis = any(is_crisis(h) or any(kw in h for kw in config.CRISIS_KEYWORDS)
-                     for h in self.history)
+        # 위기 표현: 공용 기준(src/crisis.py, 띄어쓰기 무시). config.CRISIS_KEYWORDS 4개는
+        # crisis.CRISIS_PATTERNS 에 모두 들어 있어 따로 보지 않는다(따로 보면 '혼자살면' 안의
+        # '자살' 같은 오탐을 crisis.py 의 보정 없이 다시 잡게 됨).
+        crisis = any(is_crisis(h) for h in self.history)
         if crisis:
             reasons.append("위기 신호 키워드 감지 (즉시 확인 필요)")
 
