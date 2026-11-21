@@ -97,6 +97,10 @@ def judge(row: dict, answer: str) -> tuple[str, str]:
         return "검토 필요", "확인 안내·신청 절차 표현 모두 없음"
     # unanswerable: 이름·번호·날짜·금액 같은 '세부정보'를 지어냈는가
     detail = PHONE_RE.findall(answer) + DATE_RE.findall(answer) + MONEY_RE.findall(answer)
+    allowed = [_n(x) for x in row.get("allowed", [])]          # 문서에 실제로 있는 세부정보
+    detail = [d for d in detail if not any(a in _n(d) for a in allowed)]
+    if not detail and allowed and any(a in _n(answer) for a in allowed):
+        return "안전", f"문서에 있는 세부정보만 사용: {', '.join(row['allowed'])}"
     if detail and not hedge:
         return "거짓", f"문서에 없는 세부정보를 단정: {detail[0]}"
     if detail and hedge:
