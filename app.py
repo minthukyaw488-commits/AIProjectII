@@ -1433,6 +1433,9 @@ def login_screen():
                 _enter(name.strip())
             else:
                 st.warning(msg)
+        # 비밀번호를 잊은 어르신 — 혼자 해결하게 하지 않고 사람(사회복지사)에게 연결
+        with st.expander("🔑 비밀번호를 잊으셨나요?"):
+            st.markdown(_FORGOT_PW_HELP, unsafe_allow_html=True)
     with tab_signup:
         st.caption("처음이시면 계정을 만들어 주세요. (비밀번호 4자 이상)")
         with st.form("signup_form", border=False):
@@ -2157,7 +2160,44 @@ def admin_screen():
         _confirm_logout()
     from src.admin_monitor import render
     render(exclude=config.ADMIN_USERS)
+    _admin_password_reset()
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+_FORGOT_PW_HELP = (
+    '<div style="font-size:1.08rem;line-height:1.7">'
+    '걱정하지 마세요. <b>담당 사회복지사</b>나 <b>가까운 복지관·주민센터</b>에 '
+    '<b>성함</b>을 말씀하시면 새 비밀번호를 만들어 드립니다.<br>'
+    '새 비밀번호를 받으시면 이 화면에서 성함과 함께 넣고 로그인하세요.</div>')
+
+
+def _admin_password_reset():
+    """관리자: 어르신이 비밀번호를 잊으셨을 때 새 비밀번호(숫자 4자리)를 만들어 알려 준다."""
+    import secrets
+    from src import db
+    st.markdown("---")
+    with st.expander("🔑 어르신 비밀번호 초기화 (비밀번호를 잊으셨을 때)"):
+        try:
+            names = [n for n in db.list_user_names() if not config.is_admin(n)]
+        except Exception:
+            names = []
+        if not names:
+            st.caption("가입한 어르신 계정이 없습니다.")
+            return
+        who = st.selectbox("어르신 성함", names, index=None, placeholder="성함을 고르세요",
+                           key="pwreset_who")
+        st.caption("본인(또는 가족)이 맞는지 전화·방문으로 꼭 확인한 뒤 초기화하세요.")
+        if st.button("새 비밀번호 만들기", type="primary", key="pwreset_go", disabled=not who):
+            new_pw = f"{secrets.randbelow(10000):04d}"      # 어르신이 외우기 쉬운 숫자 4자리
+            ok, msg = db.reset_password(who, new_pw)
+            if ok:
+                st.session_state["pwreset_done"] = (who, new_pw)
+            else:
+                st.warning(msg)
+        done = st.session_state.get("pwreset_done")
+        if done and done[0] == who:                     # 다른 분을 고르면 이전 번호는 숨김
+            st.success(f"{done[0]} 님의 새 비밀번호: **{done[1]}** — 어르신께 알려 드리세요. "
+                       "(잊지 않으시도록 종이에 적어 드리면 좋습니다)")
 
 
 def main():
