@@ -2422,28 +2422,30 @@ def _admin_password_reset():
     import secrets
     from src import db
     st.markdown("---")
-    with st.expander("🔑 어르신 비밀번호 초기화 (비밀번호를 잊으셨을 때)"):
-        try:
-            names = [n for n in db.list_user_names() if not config.is_admin(n)]
-        except Exception:
-            names = []
-        if not names:
-            st.caption("가입한 어르신 계정이 없습니다.")
-            return
-        who = st.selectbox("어르신 성함", names, index=None, placeholder="성함을 고르세요",
-                           key="pwreset_who")
-        st.caption("본인(또는 가족)이 맞는지 전화·방문으로 꼭 확인한 뒤 초기화하세요.")
-        if st.button("새 비밀번호 만들기", type="primary", key="pwreset_go", disabled=not who):
-            new_pw = f"{secrets.randbelow(10000):04d}"      # 어르신이 외우기 쉬운 숫자 4자리
-            ok, msg = db.reset_password(who, new_pw)
-            if ok:
-                st.session_state["pwreset_done"] = (who, new_pw)
-            else:
-                st.warning(msg)
-        done = st.session_state.get("pwreset_done")
-        if done and done[0] == who:                     # 다른 분을 고르면 이전 번호는 숨김
-            st.success(f"{done[0]} 님의 새 비밀번호: **{done[1]}** — 어르신께 알려 드리세요. "
-                       "(잊지 않으시도록 종이에 적어 드리면 좋습니다)")
+    # 접는 상자(expander)는 성함을 고르면 다시 접혀 버려서, 늘 펼쳐진 구역으로 둔다
+    st.markdown("#### 🔑 어르신 비밀번호 초기화")
+    st.caption("어르신이 비밀번호를 잊으셨을 때 — 새 비밀번호(숫자 4자리)를 만들어 알려 드립니다.")
+    try:
+        names = [n for n in db.list_user_names() if not config.is_admin(n)]
+    except Exception:
+        names = []
+    if not names:
+        st.caption("가입한 어르신 계정이 없습니다.")
+        return
+    who = st.selectbox("어르신 성함", names, index=None, placeholder="성함을 고르세요",
+                       key="pwreset_who")
+    st.caption("본인(또는 가족)이 맞는지 전화·방문으로 꼭 확인한 뒤 초기화하세요.")
+    if st.button("새 비밀번호 만들기", type="primary", key="pwreset_go", disabled=not who):
+        new_pw = f"{secrets.randbelow(10000):04d}"      # 어르신이 외우기 쉬운 숫자 4자리
+        ok, msg = db.reset_password(who, new_pw)
+        if ok:
+            st.session_state["pwreset_done"] = (who, new_pw)
+        else:
+            st.warning(msg)
+    done = st.session_state.get("pwreset_done")
+    if done and done[0] == who:                     # 다른 분을 고르면 이전 번호는 숨김
+        st.success(f"{done[0]} 님의 새 비밀번호: **{done[1]}** — 어르신께 알려 드리세요. "
+                   "(잊지 않으시도록 종이에 적어 드리면 좋습니다)")
 
 
 def main():
