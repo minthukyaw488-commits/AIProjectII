@@ -1362,6 +1362,11 @@ def profile_screen():
     editing = st.session_state.get("profile_edit", not has_saved)
     st.markdown('<div class="gov-wrap sec" style="max-width:620px;margin:1vh auto 0">',
                 unsafe_allow_html=True)
+    if not editing:                   # 보기 화면: 돌아가기는 늘 보이는 왼쪽 위에
+        st.markdown(_PROFILE_BACK_CSS, unsafe_allow_html=True)
+        if st.button("← 돌아가기", key="pf_back"):
+            st.session_state["profile_done"] = True
+            st.rerun()
     st.markdown(
         '<div style="text-align:center;margin-bottom:12px">'
         '<div class="seal" style="margin:0 auto 12px;width:52px;height:52px;font-size:26px">🧓</div>'
@@ -1379,11 +1384,7 @@ def profile_screen():
         st.markdown('<div class="pf-card">' + "".join(
             f'<div class="pf-row"><span>{_h.escape(k)}</span><b>{_h.escape(v)}</b></div>'
             for k, v in rows) + '</div>', unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        if c1.button("← 돌아가기", use_container_width=True, key="pf_back"):
-            st.session_state["profile_done"] = True
-            st.rerun()
-        if c2.button("✏️ 내 정보 수정", type="primary", use_container_width=True, key="pf_edit"):
+        if st.button("✏️ 내 정보 수정", type="primary", use_container_width=True, key="pf_edit"):
             st.session_state["profile_edit"] = True
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1460,6 +1461,16 @@ _PROFILE_RADIO_CSS = """
   [data-testid="stRadio"] label[data-testid="stRadioOption"]:is([data-selected],:has(input:checked)){border-color:#1e3a8a;
     background:#eef3ff}
   [data-testid="stRadio"] label[data-testid="stRadioOption"] p{font-size:1.08rem !important}
+</style>
+"""
+
+# '← 돌아가기'를 왼쪽 위에 작게(그래도 손가락으로 누르기 쉬운 크기)
+_PROFILE_BACK_CSS = """
+<style>
+  .st-key-pf_back{width:auto !important}
+  .st-key-pf_back button{width:auto !important; min-height:48px; padding:6px 18px; border:2px solid #b9b3a4;
+    border-radius:12px; background:#fff}
+  .st-key-pf_back button p{font-size:1.08rem !important; font-weight:700; white-space:nowrap}
 </style>
 """
 
