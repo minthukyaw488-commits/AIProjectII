@@ -162,6 +162,14 @@ RAG_REINDEX=1 python eval_ground_truth.py     # → data/eval/eval_report.md
 - **정답지 오류**: "기초연금 며칠에 입금?"을 '문서에 없음'으로 적었으나 실제로는 문서에 있음(매월 25일) → 데이터 수정
 - **자동 판정 허점**: 확인 문구를 붙이고 틀린 숫자를 말하는 답이 '안전'으로 판정됨 → 판정 규칙 보완
 
+### 발표 자료 — 평가 슬라이드 (2026-11-24)
+
+| 평가 ① 검색 (5회 반복 검증) | 평가 ② 거짓 답변률 |
+|---|---|
+| ![평가 ① 검색](docs/images/slides/eval1_retrieval.png) | ![평가 ② 거짓 답변률](docs/images/slides/eval2_false_answers.png) |
+| **평가 ③ 모델·설정 비교** | **한계와 정직한 평가** |
+| ![평가 ③ 모델·설정 비교](docs/images/slides/eval3_model_comparison.png) | ![한계](docs/images/slides/limitations.png) |
+
 ---
 
 ## 4. 설치 · 실행
