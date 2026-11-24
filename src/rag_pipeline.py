@@ -428,6 +428,7 @@ class RagPipeline:
         self._collection = self._init_chroma()
         self.use_rerank = use_rerank
         self._reranker = None            # loaded lazily on first retrieve
+        self.last_label = None           # 마지막 retrieve() 의 질문 라벨(설명·로그용)
         self.index_stats: dict = {}      # per-file breakdown set by index()
 
     @property
@@ -557,24 +558,71 @@ class RagPipeline:
             return out
         return self._collection.query(q_emb, n)
 
+    # -- 질문 라벨(src/topic_labels.py) -----------------------------------
+    _label_fallback = None          # 프로세스당 1회 학습(학습 질문 유사도 분류기)
+
+    @classmethod
+    def _get_label_fallback(cls):
+        if cls._label_fallback is None:
+            cls._label_fallback = False
+            if config.RAG_LABEL_FALLBACK:
+                try:
+                    import json
+                    from .topic_labels import GOLD_TO_LABEL, SimilarQuestionFallback
+                    rows = [json.loads(x) for x in config.LABEL_TRAIN_FILE.read_text(
+                        encoding="utf-8").splitlines() if x.strip()]
+                    rows = [r for r in rows if r.get("topic") in GOLD_TO_LABEL]
+                    cls._label_fallback = SimilarQuestionFallback(k=1).fit(
+                        [r["q"] for r in rows], [GOLD_TO_LABEL[r["topic"]] for r in rows])
+                except Exception as exc:                     # sklearn 없음·파일 없음 → 키워드만
+                    print(f"[rag] 라벨 유사 질문 분류 생략 ({exc.__class__.__name__})")
+        return cls._label_fallback or None
+
+    def question_label(self, question: str):
+        """질문 → LabelResult (항상 14개 라벨 중 하나, 판정 근거 포함)."""
+        from .topic_labels import classify
+        return classify(question, self._get_label_fallback(), 0.0)
+
     def retrieve(self, question: str, top_k: int = config.RAG_TOP_K) -> List[Retrieved]:
         """Retrieve a candidate pool by embedding, then rerank down to top_k.
 
-        With reranking disabled/unavailable this is a plain top_k embedding
-        search, so behaviour degrades gracefully.
+        순위 = 관련성 점수 + RAG_KEYWORD_BOOST · [조각이 질문 라벨의 키워드 포함].
+        돌려주는 score 는 가점 없는 관련성 점수라 관련성 게이트의 의미는 그대로다.
+        With reranking disabled/unavailable this is a plain embedding search
+        (with the same label boost), so behaviour degrades gracefully.
         """
-        if not self.use_rerank:
-            return self._vector_search(question, top_k)
-        pool = max(top_k, config.RAG_CANDIDATES)
+        pool = max(top_k, config.RAG_CANDIDATES) if (self.use_rerank or
+                                                     config.RAG_KEYWORD_BOOST > 0) else top_k
         candidates = self._vector_search(question, pool)
-        rr = self.reranker
-        if not (rr and rr.available) or len(candidates) <= top_k:
-            return candidates[:top_k]
-        order = rr.rerank(question, [c.text for c in candidates])
+        if not candidates:
+            return []
+        scores = [c.score for c in candidates]
+        rr = self.reranker if self.use_rerank else None
+        reranked = bool(rr and rr.available and len(candidates) > 1)
+        if reranked:
+            for idx, s in rr.rerank(question, [c.text for c in candidates]):
+                scores[idx] = s
+        boost = [0.0] * len(candidates)
+        self.last_label = None
+        if config.RAG_KEYWORD_BOOST > 0:
+            try:
+                from .topic_labels import TOPICS, chunk_has_topic
+                lab = self.question_label(question)
+                self.last_label = lab
+                if lab.label in TOPICS:
+                    boost = [config.RAG_KEYWORD_BOOST if chunk_has_topic(c.text, lab.label)
+                             else 0.0 for c in candidates]
+            except Exception as exc:                         # 라벨 실패해도 검색은 계속
+                print(f"[rag] 라벨 가점 생략 ({exc.__class__.__name__})")
+        order = sorted(range(len(candidates)), key=lambda i: scores[i] + boost[i], reverse=True)
         out = []
-        for idx, score in order[:top_k]:
-            c = candidates[idx]
-            out.append(Retrieved(text=c.text, source=c.source, score=score))
+        for i in order[:top_k]:
+            c = candidates[i]
+            if reranked:
+                out.append(Retrieved(text=c.text, source=c.source, score=scores[i]))
+            else:
+                c.score = scores[i]
+                out.append(c)
         return out
 
 

@@ -28,6 +28,7 @@ from .abnormal_signal import AbnormalSignalDetector, SignalResult
 from .alerts import AlertDispatcher
 from .crisis import CRISIS_REPLY, is_crisis
 from .llm import (ANSWER_SYSTEM_PROMPT, OFF_DOMAIN_REPLY, SMALLTALK_SYSTEM_PROMPT,
+                  UNSUPPORTED_SERVICE_REPLY, unsupported_service_term,
                   build_answer_prompt, build_personal_system, clean_answer, ground_answer,
                   make_llm)
 from .rag_pipeline import RagPipeline, cite_label
@@ -110,6 +111,15 @@ class WelfareAssistant:
         #    use and (Phase 2) splits compound questions, with a deterministic
         #    fallback baked in. With USE_AGENT off, or when the local LLM is
         #    unavailable, use the classic RAG pipeline.
+        # 1c) 없는 제도 확인: 질문이 가리키는 제도 이름이 검색 근거에 없으면 LLM 을 부르지 않고
+        #     "자료에서 확인되지 않는 제도"로 안내한다(다른 제도의 신청 절차를 옮겨 붙이는 환각 차단).
+        if config.SERVICE_CHECK:
+            term = unsupported_service_term(
+                question, [r.text for r in self.rag.retrieve(question)])
+            if term:
+                return TurnResult(question, UNSUPPORTED_SERVICE_REPLY.format(term=term), [],
+                                  signal, self._maybe_alert(signal))
+
         if self.use_agent and self.llm.available:
             answer, sources = self.agent.run_welfare(question)
         else:

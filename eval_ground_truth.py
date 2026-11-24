@@ -1,7 +1,7 @@
 """
 정답지(ground truth) 기반 정량 평가 — RAG 검색 + 이상신호 감지.
 
-make_ground_truth.py 가 만든 '사람이 정한 정답'(data/eval/ground_truth_*.jsonl)을
+make_ground_truth.py 가 만든 공식 문서 기반 정답(AI 보조 초안 → 팀원 주제별 검토)(data/eval/ground_truth_*.jsonl)을
 기준으로 시스템 출력을 비교해 보고서용 숫자를 뽑는다.
 
   1) RAG 검색  : 질문에 대해 올바른 근거가 상위 k개 안에 검색됐는가
@@ -35,6 +35,11 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 # 재현성: 신호는 규칙 기반이 기본(원하면 USE_LLM_SIGNAL=1), 검색은 결정형 경로.
 os.environ.setdefault("USE_LLM_SIGNAL", "0")
 os.environ.setdefault("USE_AGENT", "0")
+# 이 스크립트는 '200문항 전체 1회' 기존 프로토콜(11-14 리포트)과 비교하는 기준선이다.
+# 라벨 유사 질문 분류기가 바로 이 200문항으로 학습되므로(누수), 여기서는 라벨 가점을 끄고
+# 예전 설정(후보 10)으로 측정한다. 개선 효과는 eval_cv.py(50/25/25×5회)에서 정직하게 잰다.
+os.environ.setdefault("RAG_KEYWORD_BOOST", "0")
+os.environ.setdefault("RAG_CANDIDATES", "10")
 
 from src import config  # noqa: E402
 from src.abnormal_signal import AbnormalSignalDetector, SentimentAnalyzer  # noqa: E402

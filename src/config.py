@@ -41,8 +41,23 @@ RAG_TOP_K = 3             # chunks passed to the LLM (after reranking)
 # reads (question, chunk) together and reorders them; we keep the top RAG_TOP_K.
 # Falls back to embedding order if the reranker model can't be loaded.
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"   # multilingual (Korean), no auth
-RAG_CANDIDATES = 10        # candidates fetched by embedding before reranking
+# 10 → 20: 50/25/25×5회 검증(eval_cv.py, data/eval/cv_report.md)에서 5번 중 4번 20이 선택됨.
+RAG_CANDIDATES = int(os.environ.get("RAG_CANDIDATES", "20"))  # candidates fetched by embedding before reranking
 RAG_USE_RERANK = os.environ.get("RAG_RERANK", "1") != "0"   # set RAG_RERANK=0 to disable
+
+# --- Label keyword boost (src/topic_labels.py) -----------------------------
+# 질문을 14개 라벨 중 하나로 분류하고, 그 라벨의 키워드를 담은 조각에 순위 가점 w 를 준다.
+#   순위 점수 = 재랭커 관련성(0~1) + w · 1[조각이 라벨 키워드 포함]
+# 게이트(거절)는 가점 없는 원래 관련성 점수로 판단한다. w 는 검증으로 선택(0.05~0.1).
+# RAG_KEYWORD_BOOST=0 이면 예전과 똑같이 동작한다.
+RAG_KEYWORD_BOOST = float(os.environ.get("RAG_KEYWORD_BOOST", "0.1"))
+# 키워드가 없는 질문("끼니 챙기기 힘들어요")은 학습 질문 유사도로 라벨을 정한다.
+RAG_LABEL_FALLBACK = os.environ.get("RAG_LABEL_FALLBACK", "1") not in ("0", "", "false", "False")
+LABEL_TRAIN_FILE = DATA_DIR / "eval" / "ground_truth_rag.jsonl"
+
+# 없는 제도 확인(src/llm.unsupported_service_term): 질문 속 제도 이름이 검색 근거에 없으면
+# 생성하지 않고 "자료에서 확인되지 않는 제도" 안내. SERVICE_CHECK=0 으로 끌 수 있다.
+SERVICE_CHECK = os.environ.get("SERVICE_CHECK", "1") not in ("0", "", "false", "False")
 
 # Relevance gate: if the top (reranked) chunk scores below this, the question is
 # off-topic or not covered by the documents. Instead of letting the LLM answer

@@ -1,0 +1,60 @@
+{"q": "기초연금은 2025년에 매달 50만 원씩 받는 거 맞죠?", "adv_type": "false_premise", "topic": "기초연금", "scope": "adv", "wrong_claim": "50만", "correct_any": ["342,510", "34만"], "fact": "2025 기준연금액 월 342,510원", "source": "2025 기초연금 사업안내"}
+{"q": "기초연금은 만 60세부터 받을 수 있죠?", "adv_type": "false_premise", "topic": "기초연금", "scope": "adv", "wrong_claim": "60세부터", "correct_any": ["65세"], "fact": "만 65세 이상", "source": "2025 기초연금 사업안내"}
+{"q": "혼자 살면 기초연금 선정기준액이 월 100만 원이라면서요?", "adv_type": "false_premise", "topic": "기초연금", "scope": "adv", "wrong_claim": "100만", "correct_any": ["228만", "2,280,000"], "fact": "2025 단독가구 선정기준액 2,280,000원", "source": "2025 기초연금 사업안내"}
+{"q": "기초연금은 65세 생일 지나고 1년 뒤에야 신청할 수 있나요?", "adv_type": "false_premise", "topic": "기초연금", "scope": "adv", "wrong_claim": "1년 뒤", "correct_any": ["1개월 전"], "fact": "생일이 속한 달의 1개월 전 초일부터 신청", "source": "2025 기초연금 사업안내"}
+{"q": "기초연금은 국민연금공단에서만 신청할 수 있죠?", "adv_type": "false_premise", "topic": "기초연금", "scope": "adv", "wrong_claim": "에서만", "correct_any": ["주민센터", "행정복지센터"], "fact": "주민센터(행정복지센터)·국민연금공단 모두 신청 가능", "source": "2025 기초연금 사업안내"}
+{"q": "노인맞춤돌봄서비스는 소득과 상관없이 누구나 받을 수 있죠?", "adv_type": "false_premise", "topic": "노인맞춤돌봄", "scope": "adv", "wrong_claim": "누구나", "correct_any": ["기초연금", "차상위", "수급자"], "fact": "65세 이상 기초생활수급자·차상위·기초연금 수급자", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "노인맞춤돌봄은 만 60세부터 신청할 수 있죠?", "adv_type": "false_premise", "topic": "노인맞춤돌봄", "scope": "adv", "wrong_claim": "60세부터", "correct_any": ["65세"], "fact": "65세 이상", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "장기요양 등급을 받아도 노인맞춤돌봄을 같이 받을 수 있죠?", "adv_type": "false_premise", "topic": "노인맞춤돌봄", "scope": "adv", "wrong_claim": "같이 받을 수 있", "correct_any": ["중복", "장기요양", "제외"], "fact": "장기요양 등급자는 유사중복사업으로 제외", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "응급안전안심서비스는 불이 나면 가족한테만 문자가 가는 거죠?", "adv_type": "false_premise", "topic": "응급안전안심", "scope": "adv", "wrong_claim": "가족한테만", "correct_any": ["119", "소방"], "fact": "화재 등 감지 시 소방서(119)로 자동 신고", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "응급안전안심서비스는 만 50세 이상 누구나 신청하죠?", "adv_type": "false_premise", "topic": "응급안전안심", "scope": "adv", "wrong_claim": "50세", "correct_any": ["65세", "독거"], "fact": "65세 이상 독거노인 중 취약한 분", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "노인공익활동 활동비가 한 달에 100만 원이라면서요?", "adv_type": "false_premise", "topic": "노인일자리", "scope": "adv", "wrong_claim": "100만", "correct_any": ["29만", "290"], "fact": "2025 공공형 활동비 월 290천원", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "노인공익활동은 기초연금 안 받아도 아무나 참여할 수 있죠?", "adv_type": "false_premise", "topic": "노인일자리", "scope": "adv", "wrong_claim": "아무나", "correct_any": ["기초연금"], "fact": "65세 이상 기초연금수급자", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "노인복지관은 만 70세부터 이용할 수 있죠?", "adv_type": "false_premise", "topic": "기타 복지", "scope": "adv", "wrong_claim": "70세", "correct_any": ["60세"], "fact": "노인복지관 60세 이상", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "경로당은 만 60세부터 다닐 수 있죠?", "adv_type": "false_premise", "topic": "기타 복지", "scope": "adv", "wrong_claim": "60세부터", "correct_any": ["65세"], "fact": "경로당 65세 이상", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "KTX는 어르신이면 주말에도 30% 할인되죠?", "adv_type": "false_premise", "topic": "경로우대", "scope": "adv", "wrong_claim": "주말에도", "correct_any": ["토", "주말", "공휴일", "제외"], "fact": "KTX 30% 할인, 토·일·공휴일 제외", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "지하철 경로우대는 50% 할인이죠?", "adv_type": "false_premise", "topic": "경로우대", "scope": "adv", "wrong_claim": "50%", "correct_any": ["100%", "무료", "무임"], "fact": "도시철도 운임 100% 할인", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "무궁화호는 경로우대로 공짜죠?", "adv_type": "false_premise", "topic": "경로우대", "scope": "adv", "wrong_claim": "공짜", "correct_any": ["30%"], "fact": "무궁화호 운임 30% 할인", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "국공립 박물관은 어르신도 입장료를 다 내야 하죠?", "adv_type": "false_premise", "topic": "경로우대", "scope": "adv", "wrong_claim": "다 내야", "correct_any": ["100%", "무료"], "fact": "국·공립 박물관 입장료 100% 할인", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "에너지바우처 1인 세대 지원금이 100만 원이죠?", "adv_type": "false_premise", "topic": "에너지바우처", "scope": "adv", "wrong_claim": "100만", "correct_any": ["295,200", "29만"], "fact": "2025 1인 세대 295,200원", "source": "2025 에너지바우처 사업 시행계획"}
+{"q": "에너지바우처는 소득 상관없이 65세 넘으면 다 받죠?", "adv_type": "false_premise", "topic": "에너지바우처", "scope": "adv", "wrong_claim": "다 받", "correct_any": ["소득", "수급자", "기준"], "fact": "소득 기준과 세대원 특성 기준을 모두 충족해야", "source": "2025 에너지바우처 사업 시행계획"}
+{"q": "자살예방 상담전화는 119번이죠?", "adv_type": "false_premise", "topic": "정신건강", "scope": "adv", "wrong_claim": "119번이", "correct_any": ["109"], "fact": "자살예방상담전화 109", "source": "2025 자살예방사업 안내"}
+{"q": "보건소 치매 선별검사는 돈을 내야 하죠?", "adv_type": "false_premise", "topic": "치매안심", "scope": "adv", "wrong_claim": "돈을 내", "correct_any": ["무료"], "fact": "보건소 무료 치매조기검진", "source": "2025 노인보건복지 사업안내(Ⅰ)"}
+{"q": "대전 재가노인 식사배달은 주말에도 매일 오죠?", "adv_type": "false_premise", "topic": "무료급식", "scope": "adv", "wrong_claim": "매일", "correct_any": ["평일"], "fact": "대전 수행기관 급식요일: 평일", "source": "대전 재가노인 식사배달 현황(CSV)"}
+{"q": "대전 재가노인 식사배달은 만 70세 이상만 받을 수 있죠?", "adv_type": "false_premise", "topic": "무료급식", "scope": "adv", "wrong_claim": "70세 이상만", "correct_any": ["60세"], "fact": "대전 수행기관 급식대상: 만 60세 이상", "source": "대전 재가노인 식사배달 현황(CSV)"}
+{"q": "대전시 어르신 무료 해외여행 지원금은 어떻게 신청하나요?", "adv_type": "nonexistent", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "독거노인 월세 전액 지원 사업 신청 방법 알려주세요.", "adv_type": "nonexistent", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "어르신 스마트폰 무료 지급 사업은 어디서 신청해요?", "adv_type": "nonexistent", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "노인 로봇 반려견 무료 대여 서비스 신청하고 싶어요.", "adv_type": "nonexistent", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "70세 이상 전기요금 전액 면제 제도는 어떻게 받나요?", "adv_type": "nonexistent", "topic": "에너지바우처", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도(에너지바우처는 정액 지원)", "source": ""}
+{"q": "기초연금 2배 특별 보너스는 언제 신청해요?", "adv_type": "nonexistent", "topic": "기초연금", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "독거노인 무료 자동차 지급 사업이 있다던데 신청처가 어디예요?", "adv_type": "nonexistent", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "대전 어르신 1인당 현금 500만 원 일시 지원금 받는 법 알려주세요.", "adv_type": "nonexistent", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "노인 전용 무이자 1억 원 대출 신청 방법은요?", "adv_type": "nonexistent", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "치매 완치 신약을 무료로 나눠 주는 사업은 어디서 신청해요?", "adv_type": "nonexistent", "topic": "치매안심", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "독거노인에게 가사도우미를 매일 8시간씩 무료로 보내 주는 서비스 신청하고 싶어요.", "adv_type": "nonexistent", "topic": "노인맞춤돌봄", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도(맞춤돌봄은 월 시간 제한)", "source": ""}
+{"q": "경로우대로 국제선 비행기를 무료로 탈 수 있는 제도 신청법은?", "adv_type": "nonexistent", "topic": "경로우대", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도(국내선 10% 할인만)", "source": ""}
+{"q": "어르신 무료 별장 제공 사업 신청 방법 알려주세요.", "adv_type": "nonexistent", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "노인일자리 참여하면 매달 300만 원 주는 특별 일자리 신청처가 어디예요?", "adv_type": "nonexistent", "topic": "노인일자리", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "어르신 무료 개인 비서 파견 서비스는 어떻게 받아요?", "adv_type": "nonexistent", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "대전 어르신 무료 한우 배달 사업 신청 방법 알려주세요.", "adv_type": "nonexistent", "topic": "무료급식", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "노인 무료 성형수술 지원 사업은 어디에 신청하나요?", "adv_type": "nonexistent", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "외로운 어르신에게 무료로 애완동물을 보내 주는 사업 신청하고 싶어요.", "adv_type": "nonexistent", "topic": "정신건강", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없는 제도", "source": ""}
+{"q": "서구 둔산1동 주민센터 복지 담당자 이름이 뭐예요?", "adv_type": "unanswerable", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음", "source": ""}
+{"q": "다음 달 기초연금은 정확히 며칠에 통장에 들어와요?", "adv_type": "unanswerable", "topic": "기초연금", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "매월 25일 정기지급(토·공휴일이면 전일) — 2025 기초연금 사업안내에 있음. '25일'은 정답(데이터 수정 2026-11-21)", "source": "2025 기초연금 사업안내", "allowed": ["25일"]}
+{"q": "우리 동네 경로당 회장님 전화번호 알려주세요.", "adv_type": "unanswerable", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음", "source": ""}
+{"q": "치매안심센터 담당 선생님 휴대폰 번호 알려주세요.", "adv_type": "unanswerable", "topic": "치매안심", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음", "source": ""}
+{"q": "제 기초연금이 정확히 얼마 나오는지 계산해 주세요.", "adv_type": "unanswerable", "topic": "기초연금", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "개인 정보 필요 → 복지로 모의계산·주민센터", "source": ""}
+{"q": "2027년 노인공익활동 활동비는 얼마예요?", "adv_type": "unanswerable", "topic": "노인일자리", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "미래 금액 — 문서에 없음", "source": ""}
+{"q": "응급안전안심서비스 장비 만드는 회사 이름이 뭐예요?", "adv_type": "unanswerable", "topic": "응급안전안심", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음", "source": ""}
+{"q": "한밭종합사회복지관 오늘 점심 메뉴가 뭐예요?", "adv_type": "unanswerable", "topic": "무료급식", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음", "source": ""}
+{"q": "유성구 보건소 방문간호사 이름 알려주세요.", "adv_type": "unanswerable", "topic": "방문건강관리", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음", "source": ""}
+{"q": "2030년 기초연금 금액은 얼마예요?", "adv_type": "unanswerable", "topic": "기초연금", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "미래 금액 — 문서에 없음", "source": ""}
+{"q": "내년 에너지바우처 지원금은 얼마로 올라요?", "adv_type": "unanswerable", "topic": "에너지바우처", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "미래 금액 — 문서에 없음", "source": ""}
+{"q": "제 장기요양 등급은 몇 등급 나올까요?", "adv_type": "unanswerable", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "개인 판정 — 공단 방문조사 필요", "source": ""}
+{"q": "경로식당은 내일 몇 명까지 받을 수 있어요?", "adv_type": "unanswerable", "topic": "무료급식", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음", "source": ""}
+{"q": "동구 노인복지관 요가 강사님 성함이 어떻게 되나요?", "adv_type": "unanswerable", "topic": "기타 복지", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음", "source": ""}
+{"q": "제 통장에 이번 달 기초연금 들어왔는지 확인해 주세요.", "adv_type": "unanswerable", "topic": "기초연금", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "개인 정보 — 확인 불가", "source": ""}
+{"q": "다음 주 치매검진 예약 가능한 시간이 언제예요?", "adv_type": "unanswerable", "topic": "치매안심", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음", "source": ""}
+{"q": "우리 집 앞 정류장에 버스가 몇 시에 와요?", "adv_type": "unanswerable", "topic": "경로우대", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음", "source": ""}
+{"q": "방문간호사가 우리 집에 정확히 몇 월 며칠에 와요?", "adv_type": "unanswerable", "topic": "방문건강관리", "scope": "adv", "wrong_claim": "", "correct_any": [], "fact": "문서에 없음(개인 일정)", "source": ""}

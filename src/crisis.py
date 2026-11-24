@@ -40,12 +40,25 @@ CRISIS_REPLY = (
 # 제도·기관 이름 속 '자살'은 위기 표현이 아니다(예: "자살예방센터 어디예요?").
 _INFO_TERMS = ("자살예방", "자해예방")
 
+# 띄어쓰기를 지우면 단어 경계를 넘어 '자살'이 생기는 말: "혼자 살면" → "혼자살면" ⊃ "자살".
+# 독거 어르신이 가장 자주 쓰는 말이라 오탐이 치명적이다(평가 eval_adversarial.py 에서 발견:
+# "혼자 살면 기초연금 선정기준액이…" 에 위기 안내가 나감). '자'와 '살' 사이를 끊어 두되
+# '살'은 남겨서 "혼자 살기 싫어"(→ 살기싫) 같은 진짜 위기 표현은 그대로 잡는다.
+_SPLIT_COMPOUNDS = ("혼자살", "여자살", "남자살")
+
 
 def _norm(text: str) -> str:
     t = "".join((text or "").split())
     for term in _INFO_TERMS:
         t = t.replace(term, "")
+    for w in _SPLIT_COMPOUNDS:
+        t = t.replace(w, w[:-1] + "_" + w[-1])
     return t
+
+
+def normalize(text: str) -> str:
+    """위기·우려 키워드 비교용 정규화(띄어쓰기 제거 + 제도 이름·'혼자 살' 보정). 앱 배너도 사용."""
+    return _norm(text)
 
 
 def matched(text: str) -> list[str]:

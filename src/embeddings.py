@@ -11,6 +11,7 @@ n-grams, so the retrieval demo stays meaningful even where huggingface.co is
 unreachable. Both run fully offline at query time - no cloud call ever.
 """
 from __future__ import annotations
+import os
 from typing import List, Sequence
 
 from . import config
@@ -56,7 +57,9 @@ class EmbeddingModel:
             # Force CPU: on Apple Silicon the MPS (Metal) backend crashes with a
             # bus error when called from Streamlit's worker thread. CPU is fast
             # enough for short welfare queries and avoids that entirely.
-            self._model = SentenceTransformer(model_name, device="cpu")
+            # 평가용 대량 임베딩은 EMBED_DEVICE=cuda 로 GPU 사용 가능(서비스 기본값은 cpu 그대로)
+            self._model = SentenceTransformer(model_name,
+                                              device=os.environ.get("EMBED_DEVICE", "cpu"))
             self.backend = f"sentence-transformers:{model_name}"
         except Exception as exc:  # package missing or model download blocked
             print(f"[embeddings] '{model_name}' unavailable "
