@@ -1,7 +1,7 @@
 """
 정답지(ground truth) 기반 정량 평가 — RAG 검색 + 이상신호 감지.
 
-make_ground_truth.py 가 만든 '사람이 정한 정답'(data/eval/ground_truth_*.jsonl)을
+make_ground_truth.py 가 만든 공식 문서 기반 정답(AI 보조 초안 → 팀원 주제별 검토)(data/eval/ground_truth_*.jsonl)을
 기준으로 시스템 출력을 비교해 보고서용 숫자를 뽑는다.
 
   1) RAG 검색  : 질문에 대해 올바른 근거가 상위 k개 안에 검색됐는가

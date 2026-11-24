@@ -1,7 +1,8 @@
 """라벨 신뢰도 검토 — 팀원 1명이 정답 라벨을 보지 않고 붙인 라벨 vs 기존 정답지.
 
 교수님 피드백 1(정답 라벨의 신뢰성) 대응. 검토자가 1명이므로
-'기존 정답지 작성자'와 '새 검토자' 두 사람의 일치율(+ Cohen's kappa)을 보고한다.
+'기존 정답지(AI 보조 초안 → 팀원 주제별 검토)'와 '사람 검토자'의 일치율(+ Cohen's kappa)을 보고한다.
+정답지의 문항별 라벨은 아직 사람이 하나하나 확인하지 않았으므로 이 검토가 그 공백을 메운다.
 
     python eval_label_agreement.py make    # → data/eval/label_review_blind.csv (라벨 칸이 빈 50문항)
     python eval_label_agreement.py score   # 검토자가 채운 CSV 채점 → data/eval/label_agreement.md
@@ -90,7 +91,7 @@ def score() -> None:
             diff.append((r["id"], r["질문"], g, h, r.get("메모", "")))
     n, agree = len(pairs), sum(a == b for a, b in pairs)
     k = kappa(pairs)
-    L = ["# 라벨 신뢰도 검토 (기존 정답지 vs 팀원 독립 검토)", "",
+    L = ["# 라벨 신뢰도 검토 (기존 정답지[AI 초안·팀원 주제별 검토] vs 팀원 독립 검토)", "",
          f"- 검토 문항: {n}개 (10개 주제 × {PER_TOPIC} + 범위 밖 {N_OUT}, 시드 {SEED})",
          f"- **일치율 {agree}/{n} = {agree / n:.1%}** · Cohen's kappa = {k:.2f}",
          "- 검토자는 정답을 보지 않고 docs/LABELS.md 의 라벨 정의만 보고 붙임", "",
