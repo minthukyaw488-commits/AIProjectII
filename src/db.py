@@ -169,6 +169,114 @@ def login_check(name: str, password: str):
                 else "비밀번호가 올바르지 않습니다.")
 
 
+def list_user_names() -> list[str]:
+    """가입한 계정 이름 목록(관리자 '비밀번호 초기화'용). 가나다순."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute("SELECT name FROM users ORDER BY name")
+                    return [r["name"] for r in cur.fetchall()]
+            finally:
+                c.close()
+        return sorted(_load_json(_USERS_JSON))
+
+
+def reset_password(name: str, new_password: str):
+    """관리자(사회복지사)가 어르신 비밀번호를 새로 정해 줌. (ok, msg).
+    어르신이 비밀번호를 잊었을 때 쓰는 기능 — 일반 화면에서는 부르지 않는다."""
+    if not name or not new_password:
+        return False, "성함과 새 비밀번호를 입력해 주세요."
+    if len(new_password) < 4:
+        return False, "비밀번호는 4자 이상이어야 합니다."
+    pw = _hash_pw(new_password)
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    n = cur.execute("UPDATE users SET pw_hash=%s WHERE name=%s", (pw, name))
+                    if not n:
+                        return False, "그런 계정이 없습니다."
+                return True, "비밀번호를 바꿨습니다."
+            finally:
+                c.close()
+        users = _load_json(_USERS_JSON)
+        if name not in users:
+            return False, "그런 계정이 없습니다."
+        users[name] = pw
+        _save_json(_USERS_JSON, users)
+        return True, "비밀번호를 바꿨습니다."
+
+
+# ── 비밀번호 요청(어르신 → 사회복지사) ─────────────────────────────────
+_PWREQ_JSON = os.path.join(_DATA, "pw_requests.json")   # 파일 폴백: {성함: 요청시각}
+_PWREQ_SQL = """CREATE TABLE IF NOT EXISTS pw_requests (
+  name         VARCHAR(100) PRIMARY KEY,
+  requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"""
+
+
+def add_pw_request(name: str):
+    """어르신이 '사회복지사에게 알리기'를 누름. 같은 분이 여러 번 눌러도 1건(시각만 갱신).
+    (ok, msg) — 가입하지 않은 성함이면 False."""
+    if not name:
+        return False, "먼저 '성함' 칸에 이름을 적어 주세요."
+    if name not in list_user_names():
+        return False, "이 성함으로 가입된 계정이 없습니다. 성함을 다시 확인해 주세요."
+    import datetime
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute(_PWREQ_SQL)
+                    cur.execute("REPLACE INTO pw_requests (name) VALUES (%s)", (name,))
+                return True, "ok"
+            finally:
+                c.close()
+        reqs = _load_json(_PWREQ_JSON)
+        reqs[name] = datetime.datetime.now().isoformat(timespec="minutes")
+        _save_json(_PWREQ_JSON, reqs)
+        return True, "ok"
+
+
+def list_pw_requests() -> list[tuple[str, str]]:
+    """처리 안 된 비밀번호 요청 [(성함, 요청시각 'YYYY-MM-DDTHH:MM')] — 최근 순."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute(_PWREQ_SQL)
+                    cur.execute("SELECT name, requested_at FROM pw_requests "
+                                "ORDER BY requested_at DESC")
+                    return [(r["name"], r["requested_at"].isoformat(timespec="minutes"))
+                            for r in cur.fetchall()]
+            finally:
+                c.close()
+        reqs = _load_json(_PWREQ_JSON)
+        return sorted(reqs.items(), key=lambda kv: kv[1], reverse=True)
+
+
+def close_pw_request(name: str):
+    """요청 처리 완료(목록에서 지움)."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute(_PWREQ_SQL)
+                    cur.execute("DELETE FROM pw_requests WHERE name=%s", (name,))
+                return
+            finally:
+                c.close()
+        reqs = _load_json(_PWREQ_JSON)
+        if reqs.pop(name, None) is not None:
+            _save_json(_PWREQ_JSON, reqs)
+
+
 # ── 공개 API (앱이 쓰는 함수) ─────────────────────────────────────────
 _PROFILE_COLS_OK = False
 
