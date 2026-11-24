@@ -91,13 +91,15 @@ def _memory_index(embed_model: str, chunk_size: int):
                     sources.append(doc["source"])
     emb = EmbeddingModel(embed_model)
     emb.fit(chunks)
+    # e5 계열은 학습 방식대로 'query: ' / 'passage: ' 접두어를 붙여야 제 성능이 난다
+    qp, pp = ("query: ", "passage: ") if "e5" in embed_model.lower() else ("", "")
     t0 = time.time()
-    mat = np.asarray(emb.encode(chunks), dtype="float32")
+    mat = np.asarray(emb.encode([pp + c for c in chunks]), dtype="float32")
     mat /= (np.linalg.norm(mat, axis=1, keepdims=True) + 1e-9)
     print(f"[dump] {len(chunks)} 조각 임베딩 {time.time() - t0:.0f}s ({emb.backend})")
 
     def search(q: str, n: int):
-        v = np.asarray(emb.encode([q])[0], dtype="float32")
+        v = np.asarray(emb.encode([qp + q])[0], dtype="float32")
         v /= (np.linalg.norm(v) + 1e-9)
         sims = mat @ v
         idx = np.argsort(-sims)[:n]
@@ -298,6 +300,8 @@ def cmd_cv(args):
     for p in paths:
         d = json.loads(Path(p).read_text(encoding="utf-8"))
         caches.append((d["meta"], d["rows"]))
+    # 기준선(운영 설정)은 운영 인덱스 캐시로 잰다 → 그 캐시를 맨 앞에
+    caches.sort(key=lambda c: 0 if "운영" in c[0]["setting"] else 1)
     print(f"[cv] 검색 설정 {len(caches)}개: " + ", ".join(m["setting"] for m, _ in caches))
 
     gt_qs = [r["q"] for r in _load_jsonl(GT_FILE)]
@@ -308,6 +312,7 @@ def cmd_cv(args):
         tr, va, te = split_50_25_25(ref_rows, seed)
         split_q = ({r["q"] for r in tr}, {r["q"] for r in va}, {r["q"] for r in te})
         best = None
+        best_by_cache = {}
         for ci, (meta, rows) in enumerate(caches):
             gt = [r for r in rows if r.get("scope") in ("in", "out")]
             TR = [r for r in gt if r["q"] in split_q[0]]
@@ -324,9 +329,20 @@ def cmd_cv(args):
                 gate = _fit_gate(ptr, hp)
                 mv = _evaluate(pva, hp, gate)
                 score = _objective(mv)
-                if best is None or score > best["val_obj"] + 1e-9:
-                    best = {"cache": ci, "hp": {**hp, "gate": gate}, "fb": fb,
-                            "val_obj": score, "val": mv}
+                cur = best_by_cache.get(ci)
+                if cur is None or score > cur["val_obj"] + 1e-9:
+                    best_by_cache[ci] = {"cache": ci, "hp": {**hp, "gate": gate}, "fb": fb,
+                                         "val_obj": score, "val": mv}
+            if best is None or best_by_cache[ci]["val_obj"] > best["val_obj"] + 1e-9:
+                best = best_by_cache[ci]
+        # 검색 설정(임베딩·청크)별: 각자 검증으로 고른 하이퍼파라미터의 테스트 성능 → 한 표로 비교
+        per_setting = {}
+        for ci, b in best_by_cache.items():
+            m_, rows_ = caches[ci]
+            te_ = [r for r in rows_ if r.get("scope") in ("in", "out") and r["q"] in split_q[2]]
+            per_setting[m_["setting"]] = {**_evaluate(_prep(te_, b["fb"], b["hp"]["knn_tau"]),
+                                                      b["hp"], b["hp"]["gate"]),
+                                          "hp": b["hp"], "val_obj": b["val_obj"]}
         # 테스트: 선택된 설정 1회 + 같은 테스트에서 기준선(운영 설정)
         meta, rows = caches[best["cache"]]
         TE = [r for r in rows if r.get("scope") in ("in", "out") and r["q"] in split_q[2]]
@@ -346,6 +362,7 @@ def cmd_cv(args):
         results.append({"repeat": rep + 1, "seed": seed, "sizes": [len(s) for s in split_q],
                         "setting": meta["setting"], "hp": best["hp"],
                         "fallback_examples": fb_examples, "val": best["val"],
+                        "per_setting": per_setting,
                         "test": test, "baseline_test": baseline,
                         "adv_refused": adv, "adv_refused_baseline": adv_base})
         print(f"[cv] 반복 {rep + 1}/{args.repeats} seed={seed} 선택={best['hp']} "
@@ -385,6 +402,19 @@ def _write_report(metas, results):
                  f"**{_ms(r['test'][k] for r in results)}** |")
     L += ["", "> 기준선 = 지금 서비스 설정(재랭커 ON, 후보 10, 키워드 가점 0, 게이트 0.25, 유사 질문 분류 없음)을 "
           "**같은 테스트 문항**에서 측정한 값.", ""]
+    settings = list(results[0].get("per_setting", {}))
+    if len(settings) > 1:
+        L += ["## 1-2) 검색 설정(임베딩 모델·청크 크기) 비교 — 설정마다 검증으로 고른 하이퍼파라미터의 테스트 성능", "",
+              "| 검색 설정 | 조각 수 | 라벨 정확도 | Hit@1 | Hit@3 | 복지 답변율 | 범위 밖 거절 | 검증 점수 |",
+              "|---|---|---|---|---|---|---|---|"]
+        nchunk = {m["setting"]: m.get("n_chunks", "") for m in metas}
+        for st_ in settings:
+            rs = [r["per_setting"][st_] for r in results if st_ in r.get("per_setting", {})]
+            L.append(f"| `{st_.replace('|', ' · ')}` | {nchunk.get(st_, '')} | {_ms(x['label_acc'] for x in rs)} | "
+                     f"{_ms(x['hit1'] for x in rs)} | {_ms(x['hit3'] for x in rs)} | "
+                     f"{_ms(x['answered_in'] for x in rs)} | {_ms(x['refused_out'] for x in rs)} | "
+                     f"{_ms(x['val_obj'] for x in rs)} |")
+        L += ["", "> 같은 50/25/25 분할·같은 테스트 문항. '검증 점수' = (라벨 정확도 + Hit@1 + 게이트 균형 정확도)/3.", ""]
     adv_types = sorted({k for r in results for k in r["adv_refused"]})
     if adv_types:
         name = {"false_premise": "틀린 전제", "nonexistent": "없는 제도", "unanswerable": "문서에 없는 세부정보"}
