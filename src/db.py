@@ -210,6 +210,73 @@ def reset_password(name: str, new_password: str):
         return True, "비밀번호를 바꿨습니다."
 
 
+# ── 비밀번호 요청(어르신 → 사회복지사) ─────────────────────────────────
+_PWREQ_JSON = os.path.join(_DATA, "pw_requests.json")   # 파일 폴백: {성함: 요청시각}
+_PWREQ_SQL = """CREATE TABLE IF NOT EXISTS pw_requests (
+  name         VARCHAR(100) PRIMARY KEY,
+  requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"""
+
+
+def add_pw_request(name: str):
+    """어르신이 '사회복지사에게 알리기'를 누름. 같은 분이 여러 번 눌러도 1건(시각만 갱신).
+    (ok, msg) — 가입하지 않은 성함이면 False."""
+    if not name:
+        return False, "먼저 '성함' 칸에 이름을 적어 주세요."
+    if name not in list_user_names():
+        return False, "이 성함으로 가입된 계정이 없습니다. 성함을 다시 확인해 주세요."
+    import datetime
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute(_PWREQ_SQL)
+                    cur.execute("REPLACE INTO pw_requests (name) VALUES (%s)", (name,))
+                return True, "ok"
+            finally:
+                c.close()
+        reqs = _load_json(_PWREQ_JSON)
+        reqs[name] = datetime.datetime.now().isoformat(timespec="minutes")
+        _save_json(_PWREQ_JSON, reqs)
+        return True, "ok"
+
+
+def list_pw_requests() -> list[tuple[str, str]]:
+    """처리 안 된 비밀번호 요청 [(성함, 요청시각 'YYYY-MM-DDTHH:MM')] — 최근 순."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute(_PWREQ_SQL)
+                    cur.execute("SELECT name, requested_at FROM pw_requests "
+                                "ORDER BY requested_at DESC")
+                    return [(r["name"], r["requested_at"].isoformat(timespec="minutes"))
+                            for r in cur.fetchall()]
+            finally:
+                c.close()
+        reqs = _load_json(_PWREQ_JSON)
+        return sorted(reqs.items(), key=lambda kv: kv[1], reverse=True)
+
+
+def close_pw_request(name: str):
+    """요청 처리 완료(목록에서 지움)."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    cur.execute(_PWREQ_SQL)
+                    cur.execute("DELETE FROM pw_requests WHERE name=%s", (name,))
+                return
+            finally:
+                c.close()
+        reqs = _load_json(_PWREQ_JSON)
+        if reqs.pop(name, None) is not None:
+            _save_json(_PWREQ_JSON, reqs)
+
+
 # ── 공개 API (앱이 쓰는 함수) ─────────────────────────────────────────
 _PROFILE_COLS_OK = False
 
