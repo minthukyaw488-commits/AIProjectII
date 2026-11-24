@@ -92,6 +92,7 @@ python3 tune.py              # for 루프로 k·임계값·하이퍼파라미터
                              # → 목표(기본 라벨 정확도 95%) 이상이면 즉시 멈춤, 아니면 끝까지 돌고 최고값 선택
                              # ① 4-fold(학습 50/검증 25/테스트 25, 모든 문항이 테스트에 한 번)로 이 방법의 성능 추정
                              # ② 4개 검증 fold 평균이 가장 좋은 설정을 코드북 data/best_params.json 으로 저장 (앱이 읽어 사용)
+                             # 재랭커는 ON 고정: OFF 가 Hit@1 은 조금 높았지만 거짓 답변 1 → 4 로 늘어남 (--rerank both 로 비교 가능)
 python3 eval_cv.py cv --folds 4   # 위 표의 검증 방식을 4-fold 로 (→ data/eval/cv_report_4fold.md)
 ```
 `src/config.py` 는 `data/best_params.json` 의 후보 수·재랭커·키워드 가점·게이트·유사 질문 k·임계값을 기본값으로 읽습니다

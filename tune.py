@@ -35,14 +35,20 @@ CODEBOOK = Path("data/best_params.json")
 METRICS = {"label_acc": "라벨 정확도", "hit1": "Hit@1", "hit3": "Hit@3"}
 
 
-def find_best(pairs, target: float, metric: str, show: str = "best") -> dict:
+# 재랭커는 루프에서 고르지 않고 ON 으로 고정한다(기본). 11-24 서버: 검색 지표만으로 고르면 OFF 가
+# Hit@1 이 약간 높았지만, 같은 설정으로 거짓 유도 60문항을 돌리니 거짓 답변 1 → 4, 검토 필요 8 → 10
+# 으로 나빠졌다(eval_adversarial.py). 검색 정확도보다 거짓 답변을 줄이는 쪽을 택한다.
+RERANK_CHOICES = {"on": [True], "off": [False], "both": [True, False]}
+
+
+def find_best(pairs, target: float, metric: str, show: str = "best", rerank: str = "on") -> dict:
     """피드백 루프: 설정을 하나씩 바꿔 검증 정확도를 재고, 목표 이상이면 바로 멈춘다.
     pairs = [(학습, 검증), ...] — 여러 개면 검증 점수의 평균으로 비교한다.
     목표에 못 미치면 끝까지 돌고 가장 좋은 설정을 돌려준다."""
     combos = list(itertools.product(
         E.GRID["knn_k"],      # k   : 가장 비슷한 학습 질문 몇 개로 투표할지
         E.GRID["knn_tau"],    # tau : 유사도 임계값(threshold). 이보다 낮으면 '기타 복지'
-        E.GRID["rerank"],     #       재랭커 사용 여부
+        RERANK_CHOICES[rerank],  #    재랭커 사용 여부 (기본 ON 고정, 위 설명)
         E.GRID["pool"],       #       재랭킹 전 후보 수
         E.GRID["kw_boost"],   # w   : 라벨 키워드가 든 조각에 주는 가점
         E.GRID["gate"]))      # gate: 거절 임계값(threshold). 1위 관련성 점수가 이보다 낮으면 '문서에 없음'
@@ -110,17 +116,20 @@ def main():
     ap.add_argument("--folds", type=int, default=4, help="교차검증 fold 수 (기본 4 = 50/25/25)")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--all", action="store_true", help="루프의 모든 시도를 출력")
+    ap.add_argument("--rerank", choices=list(RERANK_CHOICES), default="on",
+                    help="재랭커: on 고정(기본, 거짓 답변 평가 근거) / off / both(루프에서 선택)")
     ap.add_argument("--cache", help="캐시 파일 (기본: cv_cache 의 운영 인덱스 캐시)")
     args = ap.parse_args()
     meta, rows = load_rows(args.cache)
     name = METRICS[args.metric]
     splits = E.split_kfold(rows, args.folds, args.seed)
-    print(f"[tune] 캐시={meta['setting']} · 목표: 검증 {name} ≥ {args.target:.0%} · {args.folds}-fold")
+    print(f"[tune] 캐시={meta['setting']} · 목표: 검증 {name} ≥ {args.target:.0%} · {args.folds}-fold"
+          f" · 재랭커 {args.rerank}")
 
     # ① 성능 추정 — fold 마다 루프로 설정을 고르고 그 fold 의 테스트로 1번만 잰다
     tests, bases = [], []
     for i, (tr, va, te) in enumerate(splits, 1):
-        best = find_best([(tr, va)], args.target, args.metric, show="none")
+        best = find_best([(tr, va)], args.target, args.metric, show="none", rerank=args.rerank)
         t, b = test_once(best, te), baseline(te)
         tests.append(t)
         bases.append(b)
@@ -134,7 +143,7 @@ def main():
     # ② 코드북 — 설정마다 4개 검증 fold 의 평균 점수로 비교해 가장 좋은 설정을 저장
     print(f"[tune] 코드북 선택: 설정마다 {args.folds}개 검증 fold 의 평균으로 비교")
     best = find_best([(tr, va) for tr, va, _te in splits], args.target, args.metric,
-                     show="all" if args.all else "best")
+                     show="all" if args.all else "best", rerank=args.rerank)
     status = "목표 도달 → 루프 종료" if best["reached"] else "목표 미달 → 가장 좋은 설정 사용"
     print(f"[tune] {status} ({best['tried']}개 시도) · 선택: {best['hp']}")
     print(f"[tune] 검증 평균 {_pct(best['val'])}")
