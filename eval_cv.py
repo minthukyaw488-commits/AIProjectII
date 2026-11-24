@@ -268,23 +268,28 @@ def _evaluate(prepped, hp: dict, gate: float) -> dict:
 
 def _fit_gate(prepped, hp) -> float:
     """학습 데이터에서 게이트 임계값 학습: 균형 정확도(복지 답변율·범위 밖 거절율 평균) 최대.
-    동점이면 더 낮은 임계값(=복지 질문을 덜 거절)."""
-    pts = []                                   # (1위 점수, in?, 규칙으로 이미 거절?)
-    for r, lab, f in prepped:
+
+    게이트는 규칙(범위 밖 단어 목록)과 별개인 '두 번째 안전장치'이므로, 규칙이 이미 걸러 낸
+    질문까지 포함해 '점수만으로' 복지 질문과 범위 밖 질문을 가장 잘 나누는 값을 찾는다.
+    (규칙에 걸린 질문을 빼고 학습하면, 학습 데이터의 범위 밖 질문이 모두 규칙에 걸릴 때
+     어떤 임계값이든 점수가 같아져 0 이 골라지고 게이트가 꺼진다 — 11-24 서버 실행에서 발견.)
+    동점인 임계값이 여러 개면 그 구간의 가운데 값(양쪽 여유가 가장 큼)."""
+    pts = []                                   # (1위 점수, 복지 질문인가)
+    for r, _lab, f in prepped:
         top = _rank(r, f, hp["rerank"], hp["pool"], hp["kw_boost"])[1]
-        pts.append((top, r["scope"] == "in", lab.label in RULE_REFUSE))
+        pts.append((top, r["scope"] == "in"))
     n_in = sum(1 for p in pts if p[1]) or 1
     n_out = sum(1 for p in pts if not p[1]) or 1
     tops = sorted({p[0] for p in pts})
     cands = [0.0] + [(a + b) / 2 for a, b in zip(tops, tops[1:])] + ([tops[-1] + 1e-3] if tops else [])
-    best_g, best = 0.0, -1.0
+    scored = []
     for g in cands:
-        ans = sum(1 for t, i, rule in pts if i and not rule and t >= g) / n_in
-        ref = sum(1 for t, i, rule in pts if not i and (rule or t < g)) / n_out
-        m = (ans + ref) / 2
-        if m > best + 1e-9:
-            best_g, best = g, m
-    return round(best_g, 4)
+        ans = sum(1 for t, i in pts if i and t >= g) / n_in       # 복지 질문을 답함
+        ref = sum(1 for t, i in pts if not i and t < g) / n_out   # 범위 밖 질문을 거절함
+        scored.append(((ans + ref) / 2, g))
+    best = max(m for m, _ in scored)
+    ties = [g for m, g in scored if m >= best - 1e-9]
+    return round((min(ties) + max(ties)) / 2, 4)
 
 
 def _objective(m: dict) -> float:

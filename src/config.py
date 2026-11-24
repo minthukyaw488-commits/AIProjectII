@@ -87,6 +87,8 @@ SERVICE_CHECK = os.environ.get("SERVICE_CHECK", "1") not in ("0", "", "false", "
 # for the cross-encoder's 0-1 relevance score (valid matches are usually > 0.5,
 # off-topic < 0.1). Set RAG_MIN_RELEVANCE=0 to disable the gate.
 RAG_MIN_RELEVANCE = float(_tuned("RAG_MIN_RELEVANCE", "gate", 0.25))
+if RAG_MIN_RELEVANCE <= 0 and "RAG_MIN_RELEVANCE" not in os.environ:
+    RAG_MIN_RELEVANCE = 0.25   # 코드북의 게이트 0 = 안전장치 꺼짐 → 받지 않고 기본값(끄려면 환경변수로 명시)
 
 # Exclude '명단/현황' directory spreadsheets from the index. These are address
 # lists (경로당·시설 현황) — pure location data, not Q&A content — and they flood
