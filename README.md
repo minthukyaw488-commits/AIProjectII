@@ -88,10 +88,10 @@
 **피드백 루프 · 4-fold 교차검증 (교수님 피드백 11-24)** — `tune.py`
 
 ```bash
-python3 tune.py              # for 루프로 k·임계값·하이퍼파라미터를 바꿔 가며 검증 정확도 측정
+python3 tune.py              # for 루프로 k·임계값·하이퍼파라미터·거절 게이트(576개 조합)를 바꿔 가며 검증 정확도 측정
                              # → 목표(기본 라벨 정확도 95%) 이상이면 즉시 멈춤, 아니면 끝까지 돌고 최고값 선택
-                             # → 테스트 1회 측정 → 코드북 data/best_params.json 저장 (앱이 읽어 사용)
-python3 tune.py --folds 4    # 같은 루프를 4-fold 로 평가: 학습 50/검증 25/테스트 25, 모든 문항이 테스트에 한 번
+                             # ① 4-fold(학습 50/검증 25/테스트 25, 모든 문항이 테스트에 한 번)로 이 방법의 성능 추정
+                             # ② 4개 검증 fold 평균이 가장 좋은 설정을 코드북 data/best_params.json 으로 저장 (앱이 읽어 사용)
 python3 eval_cv.py cv --folds 4   # 위 표의 검증 방식을 4-fold 로 (→ data/eval/cv_report_4fold.md)
 ```
 `src/config.py` 는 `data/best_params.json` 의 후보 수·재랭커·키워드 가점·게이트·유사 질문 k·임계값을 기본값으로 읽습니다
