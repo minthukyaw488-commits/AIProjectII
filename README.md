@@ -94,9 +94,33 @@
 | + 방문건강관리 문서 보강 | 66.8% | 79.6% | **코퍼스 보강** (방문건강관리 Hit@3 20% → 58%) |
 | + 라벨 키워드 가점·후보 20 | 68.4% | **84.4%** | **검색 개선** |
 
+**임베딩 모델 · 청크 크기 비교 (2026-11-24)**
+
+각 설정마다 검증으로 하이퍼파라미터를 따로 고른 뒤, 같은 테스트 문항으로 측정했습니다 (평균 ± 표준편차).
+
+| 검색 설정 | 조각 수 | Hit@1 | Hit@3 | 임베딩 시간(GPU) |
+|---|---|---|---|---|
+| **bge-m3 · 청크 400 (운영)** | 4,409 | 68.4% ± 4.7 | **84.4% ± 7.5** | 150초 |
+| bge-m3 · 청크 300 | 5,871 | 62.5% ± 8.1 | 78.6% ± 3.5 | 151초 |
+| bge-m3 · 청크 600 | 2,984 | 70.0% ± 3.8 | 79.7% ± 3.2 | 150초 |
+| multilingual-e5-large · 청크 400 | 4,409 | 69.0% ± 6.0 | 84.5% ± 5.0 | 152초 |
+| ko-sroberta-multitask · 청크 400 | 4,409 | 68.4% ± 9.3 | 77.0% ± 6.4 | **25초** |
+
+- **결론: 현재 운영 설정(bge-m3 · 청크 400)을 유지합니다.**
+  - multilingual-e5-large는 오차 범위 안에서 동률입니다.
+  - 청크 300은 모든 지표가 낮습니다.
+  - 청크 600과 ko-sroberta는 Hit@3가 4~7%p 낮습니다. 다만 ko-sroberta는 임베딩이 6배 빠릅니다.
+- 주의: 5개 설정을 한꺼번에 놓고 검증 점수로 고르면, 검증 50문항에서 우연히 좋았던 설정이 뽑혀 테스트 Hit@3가 78.6%로 오히려 낮아졌습니다. 그래서 설정 비교는 위 표처럼 **설정별로 따로** 봅니다.
+- 주의: Hit@K는 '정답 키워드가 조각에 들어 있는가'로 판정하므로 청크가 클수록 유리합니다. 청크 크기 간 비교는 이 점을 감안해야 합니다.
+
 재현:
 ```bash
-python eval_cv.py dump && python eval_cv.py cv      # → data/eval/cv_report.md
+python eval_cv.py dump                                                  # 운영 인덱스
+EMBED_DEVICE=cuda python eval_cv.py dump --embed intfloat/multilingual-e5-large
+EMBED_DEVICE=cuda python eval_cv.py dump --embed jhgan/ko-sroberta-multitask
+EMBED_DEVICE=cuda python eval_cv.py dump --chunk-size 300
+EMBED_DEVICE=cuda python eval_cv.py dump --chunk-size 600
+python eval_cv.py cv                                                    # → data/eval/cv_report.md
 ```
 
 ### 3-2. 거짓 답변률 — 거짓 유도 질문 60개
