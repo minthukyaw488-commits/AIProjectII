@@ -58,3 +58,9 @@ CREATE TABLE IF NOT EXISTS welfare_catalog (
   need_illness      TINYINT DEFAULT 0,
   verify_note       TEXT NULL
 ) ENGINE=InnoDB;
+
+-- 비밀번호 요청(어르신이 '사회복지사에게 알리기'를 누름) — 앱이 없으면 자동으로 만듦
+CREATE TABLE IF NOT EXISTS pw_requests (
+  name         VARCHAR(100) PRIMARY KEY,
+  requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;

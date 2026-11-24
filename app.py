@@ -1434,8 +1434,7 @@ def login_screen():
             else:
                 st.warning(msg)
         # 비밀번호를 잊은 어르신 — 혼자 해결하게 하지 않고 사람(사회복지사)에게 연결
-        with st.expander("🔑 비밀번호를 잊으셨나요?"):
-            st.markdown(_FORGOT_PW_HELP, unsafe_allow_html=True)
+        _forgot_password_box()
     with tab_signup:
         st.caption("처음이시면 계정을 만들어 주세요. (비밀번호 4자 이상)")
         with st.form("signup_form", border=False):
@@ -2166,19 +2165,110 @@ def admin_screen():
 
 _FORGOT_PW_HELP = (
     '<div style="font-size:1.08rem;line-height:1.7">'
-    '걱정하지 마세요. <b>담당 사회복지사</b>나 <b>가까운 복지관·주민센터</b>에 '
-    '<b>성함</b>을 말씀하시면 새 비밀번호를 만들어 드립니다.<br>'
-    '새 비밀번호를 받으시면 이 화면에서 성함과 함께 넣고 로그인하세요.</div>')
+    '걱정하지 마세요. 아래 버튼을 누르시면 <b>담당 사회복지사</b>에게 알려 드려요. '
+    '사회복지사가 <b>전화로 확인</b>한 뒤 새 비밀번호를 알려 드립니다.</div>')
+
+_FORGOT_PW_CSS = """
+<style>
+  .st-key-pwreq_send button{background:#e8590c !important; border:2px solid #e8590c !important;
+    color:#fff !important; min-height:56px}
+  .st-key-pwreq_send button p{font-size:1.15rem !important; font-weight:800; color:#fff !important}
+  .st-key-pwreq_send button:hover{background:#c94c08 !important}
+</style>
+"""
+
+
+def _forgot_password_box():
+    """로그인 화면 '🔑 비밀번호를 잊으셨나요?' — 버튼 하나로 사회복지사에게 요청을 보낸다.
+    (요청만 남기고 비밀번호는 바꾸지 않는다. 사회복지사가 전화로 본인 확인 후 초기화)"""
+    from src import db
+    sent = st.session_state.get("pwreq_sent")
+    with st.expander("🔑 비밀번호를 잊으셨나요?", expanded=bool(sent)):
+        if sent:
+            st.success(f"✅ **{sent} 님**, 사회복지사에게 알렸습니다.  \n"
+                       "곧 **전화**로 연락드릴 거예요.  \n"
+                       "새 비밀번호를 받으시면 이 화면에서 로그인하세요.")
+            return
+        st.markdown(_FORGOT_PW_HELP + _FORGOT_PW_CSS, unsafe_allow_html=True)
+        # 로그인 칸(st.form 안)은 '로그인'을 눌러야 값이 넘어오므로, 여기서 성함을 한 번 더 받는다
+        # (로그인 칸에 이미 들어간 성함이 있으면 미리 채움)
+        if not st.session_state.get("pwreq_name") and st.session_state.get("li_name"):
+            st.session_state["pwreq_name"] = st.session_state["li_name"]
+        nm_in = st.text_input("성함", key="pwreq_name", placeholder="예: 홍길동")
+        if st.button("📞 사회복지사에게 알리기", key="pwreq_send", use_container_width=True):
+            nm = (nm_in or "").strip()
+            if config.is_admin(nm):
+                ok, msg = False, "관리자 계정은 서버 담당자에게 문의하세요."
+            else:
+                try:
+                    ok, msg = db.add_pw_request(nm)
+                except Exception:
+                    ok, msg = False, "잠시 후 다시 눌러 주세요."
+            if ok:
+                st.session_state["pwreq_sent"] = nm
+                st.rerun()
+            st.warning(msg)
+        st.caption("직접 연락: 가까운 복지관·주민센터")
+
+
+def _new_simple_pw() -> str:
+    import secrets
+    return f"{secrets.randbelow(10000):04d}"          # 어르신이 외우기 쉬운 숫자 4자리
+
+
+def _admin_pw_requests():
+    """관리자: 어르신이 보낸 '비밀번호 요청' 목록 — [새 비밀번호 만들기] [처리 완료]."""
+    import html as _h
+    from src import db
+    try:
+        reqs = db.list_pw_requests()
+    except Exception:
+        reqs = []
+    if not reqs:
+        st.caption("📭 새로 온 비밀번호 요청이 없습니다.")
+        return
+    st.markdown(f'<div style="color:#b4440a;font-weight:800">📬 비밀번호 요청 {len(reqs)}건</div>',
+                unsafe_allow_html=True)
+    for i, (nm, at) in enumerate(reqs):
+        try:
+            phone = (db.get_profile(nm) or {}).get("phone")
+        except Exception:
+            phone = None
+        when = at.replace("T", " ")
+        with st.container(border=True):
+            c1, c2, c3 = st.columns([3, 2, 1.3], vertical_alignment="center")
+            c1.markdown(f'<b style="font-size:1.05rem">{_h.escape(nm)}</b> 님 · ☎ '
+                        f'{_h.escape(phone) if phone else "연락처 없음"}'
+                        f'<div style="color:#6b7383;font-size:.85rem">{when} 요청</div>',
+                        unsafe_allow_html=True)
+            if c2.button("새 비밀번호 만들기", type="primary", key=f"pwreq_new_{i}",
+                         use_container_width=True):
+                new_pw = _new_simple_pw()
+                ok, msg = db.reset_password(nm, new_pw)
+                if ok:
+                    st.session_state["pwreset_done"] = (nm, new_pw)
+                else:
+                    st.warning(msg)
+            if c3.button("처리 완료", key=f"pwreq_done_{i}", use_container_width=True):
+                db.close_pw_request(nm)
+                st.session_state.pop("pwreset_done", None)
+                st.rerun()
+        done = st.session_state.get("pwreset_done")
+        if done and done[0] == nm:
+            st.success(f"{nm} 님의 새 비밀번호: **{done[1]}** — 전화로 알려 드린 뒤 "
+                       "'처리 완료'를 눌러 주세요. (종이에 적어 드리면 좋습니다)")
 
 
 def _admin_password_reset():
     """관리자: 어르신이 비밀번호를 잊으셨을 때 새 비밀번호(숫자 4자리)를 만들어 알려 준다."""
-    import secrets
     from src import db
     st.markdown("---")
     # 접는 상자(expander)는 성함을 고르면 다시 접혀 버려서, 늘 펼쳐진 구역으로 둔다
     st.markdown("#### 🔑 어르신 비밀번호 초기화")
     st.caption("어르신이 비밀번호를 잊으셨을 때 — 새 비밀번호(숫자 4자리)를 만들어 알려 드립니다.")
+    _admin_pw_requests()
+    st.markdown('<div style="margin-top:14px;color:#6b7383;font-size:.92rem">'
+                '── 요청 없이 직접 초기화 ──</div>', unsafe_allow_html=True)
     try:
         names = [n for n in db.list_user_names() if not config.is_admin(n)]
     except Exception:
@@ -2190,7 +2280,7 @@ def _admin_password_reset():
                        key="pwreset_who")
     st.caption("본인(또는 가족)이 맞는지 전화·방문으로 꼭 확인한 뒤 초기화하세요.")
     if st.button("새 비밀번호 만들기", type="primary", key="pwreset_go", disabled=not who):
-        new_pw = f"{secrets.randbelow(10000):04d}"      # 어르신이 외우기 쉬운 숫자 4자리
+        new_pw = _new_simple_pw()
         ok, msg = db.reset_password(who, new_pw)
         if ok:
             st.session_state["pwreset_done"] = (who, new_pw)
