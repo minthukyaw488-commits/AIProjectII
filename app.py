@@ -1267,6 +1267,8 @@ def _read_name_cookie():
         raw = st.context.cookies.get(_NAME_COOKIE)
     except Exception:
         return None
+    if not isinstance(raw, str):      # 쿠키가 없거나 문자열이 아니면(테스트 환경 등) 무시
+        return None
     nm = unquote(raw).strip() if raw else ""
     return nm or None
 
