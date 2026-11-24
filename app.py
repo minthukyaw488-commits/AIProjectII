@@ -1212,6 +1212,7 @@ def _verify_user_token(name: str, tok: str) -> bool:
 
 
 _LOGIN_COOKIE = "whub_login"
+_NAME_COOKIE = "whub_name"          # 성함만(비밀번호·토큰 아님) — 로그아웃 후 미리 채우기
 _LOGIN_COOKIE_DAYS = 30
 
 _REMEMBER_HELP = (
@@ -1238,19 +1239,35 @@ def _read_login_cookie():
 
 def _write_login_cookie(name):
     """'로그인 상태 유지' 쿠키 저장(name) 또는 삭제(None). 값은 성함|서명토큰(비밀번호 아님)."""
+    if name:
+        _write_cookie(_LOGIN_COOKIE, f"{name}|{_user_token(name)}", _LOGIN_COOKIE_DAYS * 24 * 3600)
+    else:
+        _write_cookie(_LOGIN_COOKIE, None, 0)
+
+
+def _write_cookie(key, value, max_age):
+    """브라우저(휴대폰 포함) 쿠키 쓰기/지우기. https 면 Secure, SameSite=Lax."""
     import json
     import time
     import streamlit.components.v1 as components
-    if name:
-        val = json.dumps(f"{name}|{_user_token(name)}")
-        age = _LOGIN_COOKIE_DAYS * 24 * 3600
-    else:
-        val, age = '""', 0
+    val = json.dumps(value or "")
+    age = int(max_age) if value else 0
     components.html(
         f"<!-- {time.time_ns()} --><script>try{{var w=window.parent;"
-        f"w.document.cookie='{_LOGIN_COOKIE}='+encodeURIComponent({val})+"
+        f"w.document.cookie='{key}='+encodeURIComponent({val})+"
         f"'; max-age={age}; path=/; SameSite=Lax'+(w.location.protocol==='https:'?'; Secure':'');"
         "}catch(e){}</script>", height=0)
+
+
+def _read_name_cookie():
+    """'로그인 상태 유지'로 기억한 성함(로그아웃 후 로그인 칸 미리 채우기용). 없으면 None."""
+    from urllib.parse import unquote
+    try:
+        raw = st.context.cookies.get(_NAME_COOKIE)
+    except Exception:
+        return None
+    nm = unquote(raw).strip() if raw else ""
+    return nm or None
 
 
 def _set_login_params(name: str):
@@ -1302,8 +1319,12 @@ def _confirm_logout():
 
 def _logout():
     """로그아웃 → 로그인 화면으로. 세션·URL(?u=,?t=) 모두 비워 새 계정으로 로그인 가능."""
-    st.session_state["clear_login_cookie"] = True   # '로그인 상태 유지' 쿠키도 지움
+    st.session_state["clear_login_cookie"] = True   # '로그인 상태 유지'(자동 로그인)는 지움
     st.session_state["logged_out"] = True
+    _rn = st.session_state.pop("remembered_name", None)
+    if _rn:                                          # 성함·체크는 남겨 다음 로그인 때 편하게
+        st.session_state["li_name"] = _rn
+        st.session_state["li_remember"] = True
     for k in ("auth_user", "is_admin", "profile", "profile_done", "chat", "pending_q"):
         st.session_state.pop(k, None)
     st.query_params.clear()
@@ -1483,6 +1504,12 @@ def login_screen():
         '<div style="color:#5c6b86;font-size:14px;margin-top:4px">대전광역시 · 어르신 복지 AI</div>'
         '</div>', unsafe_allow_html=True)
     from src import db
+    # '로그인 상태 유지'를 썼던 기기: 로그아웃 후에도 성함·체크는 채워 둔다(비밀번호는 아님)
+    if "li_name" not in st.session_state:
+        _nm = _read_name_cookie()
+        if _nm:
+            st.session_state["li_name"] = _nm
+            st.session_state["li_remember"] = True
 
     def _enter(name: str):
         """로그인 성공 처리: 세션 설정 + 저장된 프로필·지난 대화 불러오기."""
@@ -1502,8 +1529,10 @@ def login_screen():
         unsafe_allow_html=True)
     with tab_login:
         with st.form("login_form", border=False):
-            name = st.text_input("성함", key="li_name", placeholder="예: 홍길동")
-            pw = st.text_input("비밀번호", key="li_pw", type="password")
+            name = st.text_input("성함", key="li_name", placeholder="예: 홍길동",
+                                 autocomplete="username")
+            pw = st.text_input("비밀번호", key="li_pw", type="password",
+                               autocomplete="current-password")
             remember = st.checkbox("이 기기에서 로그인 상태 유지", key="li_remember")
             st.markdown(_REMEMBER_HELP, unsafe_allow_html=True)
             submitted = st.form_submit_button("로그인", type="primary",
@@ -1516,15 +1545,20 @@ def login_screen():
                 if remember and not config.is_admin(name.strip()):
                     # 다음 화면에서 브라우저 쿠키에 저장(관리자 계정은 보안상 저장하지 않음)
                     st.session_state["set_login_cookie"] = name.strip()
+                else:
+                    st.session_state["forget_name_cookie"] = True   # 체크 해제 → 성함 기억도 지움
                 _enter(name.strip())
             else:
                 st.warning(msg)
     with tab_signup:
         st.caption("처음이시면 계정을 만들어 주세요. (비밀번호 4자 이상)")
         with st.form("signup_form", border=False):
-            n2 = st.text_input("성함", key="su_name", placeholder="예: 홍길동")
-            p2 = st.text_input("비밀번호", key="su_pw", type="password")
-            p3 = st.text_input("비밀번호 확인", key="su_pw2", type="password")
+            n2 = st.text_input("성함", key="su_name", placeholder="예: 홍길동",
+                               autocomplete="username")
+            p2 = st.text_input("비밀번호", key="su_pw", type="password",
+                               autocomplete="new-password")
+            p3 = st.text_input("비밀번호 확인", key="su_pw2", type="password",
+                               autocomplete="new-password")
             submitted2 = st.form_submit_button("회원가입", type="primary",
                                                use_container_width=True)
         if submitted2:
@@ -2387,10 +2421,16 @@ def main():
         if _c and not config.is_admin(_c[0]) and _verify_user_token(*_c):
             _load_user_session(_c[0])
             _set_login_params(_c[0])
+            st.session_state["remembered_name"] = _c[0]
     if st.session_state.pop("clear_login_cookie", False):
         _write_login_cookie(None)                  # 로그아웃 → 저장된 로그인 지우기
     if st.session_state.get("auth_user") and st.session_state.get("set_login_cookie"):
-        _write_login_cookie(st.session_state.pop("set_login_cookie"))
+        _nm = st.session_state.pop("set_login_cookie")
+        _write_login_cookie(_nm)
+        _write_cookie(_NAME_COOKIE, _nm, _LOGIN_COOKIE_DAYS * 24 * 3600)   # 성함만 따로 기억
+        st.session_state["remembered_name"] = _nm
+    if st.session_state.pop("forget_name_cookie", False):
+        _write_cookie(_NAME_COOKIE, None, 0)
 
     # 접속 흐름: 로그인 → 내 정보 입력 → (이후) 포털 화면.
     # 로그인·내 정보는 무거운 어시스턴트가 필요 없으므로 바로 뜬다.
