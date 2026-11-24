@@ -11,6 +11,7 @@ a fallback so the pipeline still runs without an API key. Sensitive data is
 handled on the server side (encryption / access control) rather than sent to a
 third-party store beyond the model call.
 """
+import json
 import os
 from pathlib import Path
 
@@ -21,6 +22,24 @@ WELFARE_DOCS_DIR = DATA_DIR / "welfare_docs"
 AUDIO_DIR = DATA_DIR / "audio"
 CHROMA_DIR = DATA_DIR / "chroma_db"          # persisted vector store
 ALERT_LOG_DIR = DATA_DIR / "alerts"          # local social-worker alert log
+
+# --- 피드백 루프 결과(코드북) -------------------------------------------------
+# tune.py 가 검증 데이터로 찾은 최적 하이퍼파라미터를 data/best_params.json 에 저장하고,
+# 앱은 아래 RAG_* · LABEL_* 기본값을 이 파일에서 읽는다(교수님 피드백 11-24).
+# 우선순위: 환경변수 > 코드북 파일 > 코드에 적힌 기본값.
+BEST_PARAMS_FILE = DATA_DIR / "best_params.json"
+try:
+    BEST_PARAMS = json.loads(BEST_PARAMS_FILE.read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    BEST_PARAMS = {}
+
+
+def _tuned(env: str, key: str, default):
+    """환경변수 → 코드북(best_params.json) → 기본값 순서로 하이퍼파라미터를 정한다."""
+    if os.environ.get(env) not in (None, ""):
+        return os.environ[env]
+    return BEST_PARAMS.get(key, default)
+
 
 # --- RAG / embedding -----------------------------------------------------
 # bge-m3 is multilingual (Korean + English) and was validated in the
@@ -42,18 +61,21 @@ RAG_TOP_K = 3             # chunks passed to the LLM (after reranking)
 # Falls back to embedding order if the reranker model can't be loaded.
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"   # multilingual (Korean), no auth
 # 10 → 20: 50/25/25×5회 검증(eval_cv.py, data/eval/cv_report.md)에서 5번 중 4번 20이 선택됨.
-RAG_CANDIDATES = int(os.environ.get("RAG_CANDIDATES", "20"))  # candidates fetched by embedding before reranking
-RAG_USE_RERANK = os.environ.get("RAG_RERANK", "1") != "0"   # set RAG_RERANK=0 to disable
+RAG_CANDIDATES = int(_tuned("RAG_CANDIDATES", "pool", 20))  # candidates fetched by embedding before reranking
+RAG_USE_RERANK = str(_tuned("RAG_RERANK", "rerank", True)) not in ("0", "False", "false")   # set RAG_RERANK=0 to disable
 
 # --- Label keyword boost (src/topic_labels.py) -----------------------------
 # 질문을 14개 라벨 중 하나로 분류하고, 그 라벨의 키워드를 담은 조각에 순위 가점 w 를 준다.
 #   순위 점수 = 재랭커 관련성(0~1) + w · 1[조각이 라벨 키워드 포함]
 # 게이트(거절)는 가점 없는 원래 관련성 점수로 판단한다. w 는 검증으로 선택(0.05~0.1).
 # RAG_KEYWORD_BOOST=0 이면 예전과 똑같이 동작한다.
-RAG_KEYWORD_BOOST = float(os.environ.get("RAG_KEYWORD_BOOST", "0.1"))
+RAG_KEYWORD_BOOST = float(_tuned("RAG_KEYWORD_BOOST", "kw_boost", 0.1))
 # 키워드가 없는 질문("끼니 챙기기 힘들어요")은 학습 질문 유사도로 라벨을 정한다.
 RAG_LABEL_FALLBACK = os.environ.get("RAG_LABEL_FALLBACK", "1") not in ("0", "", "false", "False")
 LABEL_TRAIN_FILE = DATA_DIR / "eval" / "ground_truth_rag.jsonl"
+# 유사 질문 분류: 가장 비슷한 k개로 투표, 1위 유사도가 tau 미만이면 '기타 복지' (코드북에서 읽음)
+LABEL_KNN_K = int(_tuned("LABEL_KNN_K", "knn_k", 1))
+LABEL_KNN_TAU = float(_tuned("LABEL_KNN_TAU", "knn_tau", 0.0))
 
 # 없는 제도 확인(src/llm.unsupported_service_term): 질문 속 제도 이름이 검색 근거에 없으면
 # 생성하지 않고 "자료에서 확인되지 않는 제도" 안내. SERVICE_CHECK=0 으로 끌 수 있다.
@@ -64,7 +86,7 @@ SERVICE_CHECK = os.environ.get("SERVICE_CHECK", "1") not in ("0", "", "false", "
 # from a weak/wrong chunk (hallucination), return a warm referral. Calibrated
 # for the cross-encoder's 0-1 relevance score (valid matches are usually > 0.5,
 # off-topic < 0.1). Set RAG_MIN_RELEVANCE=0 to disable the gate.
-RAG_MIN_RELEVANCE = float(os.environ.get("RAG_MIN_RELEVANCE", "0.25"))
+RAG_MIN_RELEVANCE = float(_tuned("RAG_MIN_RELEVANCE", "gate", 0.25))
 
 # Exclude '명단/현황' directory spreadsheets from the index. These are address
 # lists (경로당·시설 현황) — pure location data, not Q&A content — and they flood

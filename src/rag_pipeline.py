@@ -572,7 +572,7 @@ class RagPipeline:
                     rows = [json.loads(x) for x in config.LABEL_TRAIN_FILE.read_text(
                         encoding="utf-8").splitlines() if x.strip()]
                     rows = [r for r in rows if r.get("topic") in GOLD_TO_LABEL]
-                    cls._label_fallback = SimilarQuestionFallback(k=1).fit(
+                    cls._label_fallback = SimilarQuestionFallback(k=config.LABEL_KNN_K).fit(
                         [r["q"] for r in rows], [GOLD_TO_LABEL[r["topic"]] for r in rows])
                 except Exception as exc:                     # sklearn 없음·파일 없음 → 키워드만
                     print(f"[rag] 라벨 유사 질문 분류 생략 ({exc.__class__.__name__})")
@@ -581,7 +581,7 @@ class RagPipeline:
     def question_label(self, question: str):
         """질문 → LabelResult (항상 14개 라벨 중 하나, 판정 근거 포함)."""
         from .topic_labels import classify
-        return classify(question, self._get_label_fallback(), 0.0)
+        return classify(question, self._get_label_fallback(), config.LABEL_KNN_TAU)
 
     def retrieve(self, question: str, top_k: int = config.RAG_TOP_K) -> List[Retrieved]:
         """Retrieve a candidate pool by embedding, then rerank down to top_k.
