@@ -3,9 +3,8 @@
 교수님 피드백 3·5 반영:
   · 데이터를 학습 50% / 검증 25% / 테스트 25% 로 나누고(주제 비율 유지), 이를
     서로 다른 시드로 5번 반복해 '평균 ± 표준편차' 로 보고한다.
-  · 학습(Train)   : ① 키워드가 없는 질문을 위한 '유사 질문 분류기'(학습 질문 TF-IDF)를
-                    학습하고 ② 관련성 게이트 임계값을 학습한다(균형 정확도 최대).
-  · 검증(Val)     : 하이퍼파라미터 조합(유사 질문 k·임계값·재랭킹·후보 수·키워드 가점) 중
+  · 학습(Train)   : 키워드가 없는 질문을 위한 '유사 질문 분류기'(학습 질문 TF-IDF)를 학습한다.
+  · 검증(Val)     : 하이퍼파라미터 조합(유사 질문 k·임계값·재랭킹·후보 수·키워드 가점·거절 게이트) 중
                     검증 점수가 가장 높은 것을 고른다.
   · 테스트(Test)  : 고른 설정으로 딱 한 번 측정 → 보고. 같은 테스트에서 현재 운영 설정
                     (기준선)도 함께 측정해 '개선 전/후' 를 정직하게 비교한다.
@@ -59,6 +58,10 @@ GRID = {
     "rerank": [True, False],        # 재랭커 사용 여부
     "pool": [10, 20],               # 재랭킹 전 임베딩 후보 수
     "kw_boost": [0.0, 0.05, 0.1, 0.2],  # 라벨 키워드를 담은 조각에 주는 가점 w
+    # 거절 게이트: 1위 관련성 점수가 이 값 미만이면 '문서에 없음'. 0.25 = 기존 운영값.
+    # (11-24: 학습 데이터로 '학습'시키면 100문항에서 0 또는 너무 높은 값으로 흔들려, 다른
+    #  하이퍼파라미터처럼 후보 중 검증으로 고르는 방식으로 바꿈)
+    "gate": [0.1, 0.25, 0.4],
 }
 BASELINE = {"knn_k": None, "knn_tau": None, "rerank": True, "pool": 10,
             "kw_boost": 0.0, "gate": 0.25}   # 현재 운영 설정(src/config.py)
@@ -266,32 +269,6 @@ def _evaluate(prepped, hp: dict, gate: float) -> dict:
     }
 
 
-def _fit_gate(prepped, hp) -> float:
-    """학습 데이터에서 게이트 임계값 학습: 균형 정확도(복지 답변율·범위 밖 거절율 평균) 최대.
-
-    게이트는 규칙(범위 밖 단어 목록)과 별개인 '두 번째 안전장치'이므로, 규칙이 이미 걸러 낸
-    질문까지 포함해 '점수만으로' 복지 질문과 범위 밖 질문을 가장 잘 나누는 값을 찾는다.
-    (규칙에 걸린 질문을 빼고 학습하면, 학습 데이터의 범위 밖 질문이 모두 규칙에 걸릴 때
-     어떤 임계값이든 점수가 같아져 0 이 골라지고 게이트가 꺼진다 — 11-24 서버 실행에서 발견.)
-    동점인 임계값이 여러 개면 그 구간의 가운데 값(양쪽 여유가 가장 큼)."""
-    pts = []                                   # (1위 점수, 복지 질문인가)
-    for r, _lab, f in prepped:
-        top = _rank(r, f, hp["rerank"], hp["pool"], hp["kw_boost"])[1]
-        pts.append((top, r["scope"] == "in"))
-    n_in = sum(1 for p in pts if p[1]) or 1
-    n_out = sum(1 for p in pts if not p[1]) or 1
-    tops = sorted({p[0] for p in pts})
-    cands = [0.0] + [(a + b) / 2 for a, b in zip(tops, tops[1:])] + ([tops[-1] + 1e-3] if tops else [])
-    scored = []
-    for g in cands:
-        ans = sum(1 for t, i in pts if i and t >= g) / n_in       # 복지 질문을 답함
-        ref = sum(1 for t, i in pts if not i and t < g) / n_out   # 범위 밖 질문을 거절함
-        scored.append(((ans + ref) / 2, g))
-    best = max(m for m, _ in scored)
-    ties = [g for m, g in scored if m >= best - 1e-9]
-    return round((min(ties) + max(ties)) / 2, 4)
-
-
 def _objective(m: dict) -> float:
     """검증 선택 기준 = (라벨 정확도 + Hit@1 + 게이트 균형 정확도) / 3."""
     return (m["label_acc"] + m["hit1"] + m["gate_bacc"]) / 3
@@ -305,8 +282,9 @@ def _combos(has_rerank: bool):
                     continue
                 for pool in GRID["pool"]:
                     for w in GRID["kw_boost"]:
-                        yield {"knn_k": k, "knn_tau": tau, "rerank": rr,
-                               "pool": pool, "kw_boost": w}
+                        for g in GRID["gate"]:
+                            yield {"knn_k": k, "knn_tau": tau, "rerank": rr,
+                                   "pool": pool, "kw_boost": w, "gate": g}
 
 
 def _adv_eval(adv_rows, fb, hp, gate) -> dict:
@@ -357,14 +335,13 @@ def cmd_cv(args):
                 if key not in fb_cache:
                     fb = fit_fallback(TR, hp["knn_k"])
                     # 학습 질문 자신은 자기와 가장 비슷하므로(누수) 학습 쪽 라벨은 키워드만으로
-                    fb_cache[key] = (fb, _prep(TR), _prep(VA, fb, hp["knn_tau"]))
-                fb, ptr, pva = fb_cache[key]
-                gate = _fit_gate(ptr, hp)
-                mv = _evaluate(pva, hp, gate)
+                    fb_cache[key] = (fb, _prep(VA, fb, hp["knn_tau"]))
+                fb, pva = fb_cache[key]
+                mv = _evaluate(pva, hp, hp["gate"])
                 score = _objective(mv)
                 cur = best_by_cache.get(ci)
                 if cur is None or score > cur["val_obj"] + 1e-9:
-                    best_by_cache[ci] = {"cache": ci, "hp": {**hp, "gate": gate}, "fb": fb,
+                    best_by_cache[ci] = {"cache": ci, "hp": hp, "fb": fb,
                                          "val_obj": score, "val": mv}
             if best is None or best_by_cache[ci]["val_obj"] > best["val_obj"] + 1e-9:
                 best = best_by_cache[ci]
@@ -462,7 +439,7 @@ def _write_report(metas, results, mode: str, suffix: str = ""):
         L += ["", "> 검색 단계 지표만입니다. '실제 답변에 거짓이 섞였는가'(거짓 답변률)는 LLM 답변 생성이 "
               "필요해 다음 단계(④, GPU 서버)에서 측정합니다.", ""]
     L += ["## 3) 반복별 선택된 하이퍼파라미터", "",
-          "| 반복 | 학습/검증/테스트 | 검색 설정 | 재랭커 | 후보 수 | 키워드 가점 w | 게이트(학습) | 유사 질문 k / 임계값 | 검증 점수 |",
+          "| 반복 | 학습/검증/테스트 | 검색 설정 | 재랭커 | 후보 수 | 키워드 가점 w | 게이트 | 유사 질문 k / 임계값 | 검증 점수 |",
           "|---|---|---|---|---|---|---|---|---|"]
     for r in results:
         h = r["hp"]
@@ -487,7 +464,7 @@ def _write_report(metas, results, mode: str, suffix: str = ""):
           "2. **관련성 점수**: 재랭커(`bge-reranker-v2-m3`) 로짓의 시그모이드(0~1). 재랭커를 끄면 임베딩 코사인 유사도.",
           "3. **순위**: 관련성 점수 + w × [조각이 질문 라벨의 키워드를 포함]. w 는 검증으로 선택.",
           "4. **거절(게이트)**: 1위 조각의 관련성 점수가 임계값 미만이면 답을 지어내지 않고 주민센터 안내. "
-          "임계값은 학습 데이터에서 '복지 질문 답변율'과 '범위 밖 거절율'의 평균이 최대가 되는 값으로 학습.",
+          "임계값은 후보(0.1 / 0.25 / 0.4) 중 검증 점수가 가장 높은 값을 선택.",
           "5. **Hit@K 판정**: 정답지의 정답 키워드(gold_keyword)가 상위 K개 조각에 들어 있으면 정답(기존 리포트와 같은 기준).",
           "", "## 7) 한계", "",
           "- 테스트가 반복마다 50문항(주제당 약 3~4문항)이라 주제별 수치는 흔들림이 큽니다 → 표준편차를 함께 봅니다.",

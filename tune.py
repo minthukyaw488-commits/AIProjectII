@@ -31,20 +31,20 @@ METRICS = {"label_acc": "라벨 정확도", "hit1": "Hit@1", "hit3": "Hit@3"}
 def find_best(train, val, target: float, metric: str, verbose: bool = True) -> dict:
     """피드백 루프: 설정을 하나씩 바꿔 검증 정확도를 재고, 목표 이상이면 바로 멈춘다.
     목표에 못 미치면 끝까지 돌고 가장 좋은 설정을 돌려준다."""
-    p_train = E._prep(train)                       # 학습 질문의 라벨(키워드 기준)
     combos = list(itertools.product(
         E.GRID["knn_k"],      # k   : 가장 비슷한 학습 질문 몇 개로 투표할지
         E.GRID["knn_tau"],    # tau : 유사도 임계값(threshold). 이보다 낮으면 '기타 복지'
         E.GRID["rerank"],     #       재랭커 사용 여부
         E.GRID["pool"],       #       재랭킹 전 후보 수
-        E.GRID["kw_boost"]))  # w   : 라벨 키워드가 든 조각에 주는 가점
+        E.GRID["kw_boost"],   # w   : 라벨 키워드가 든 조각에 주는 가점
+        E.GRID["gate"]))      # gate: 거절 임계값(threshold). 1위 관련성 점수가 이보다 낮으면 '문서에 없음'
     best = None
-    for n, (k, tau, rerank, pool, w) in enumerate(combos, 1):
+    for n, (k, tau, rerank, pool, w, gate) in enumerate(combos, 1):
         fb = E.fit_fallback(train, k)                          # 학습 질문으로 분류기 학습
-        hp = {"knn_k": k, "knn_tau": tau, "rerank": rerank, "pool": pool, "kw_boost": w}
-        hp["gate"] = E._fit_gate(p_train, hp)                  # 거절 기준도 학습 데이터로
+        hp = {"knn_k": k, "knn_tau": tau, "rerank": rerank, "pool": pool, "kw_boost": w, "gate": gate}
         m = E._evaluate(E._prep(val, fb, tau), hp, hp["gate"])  # 검증 데이터로 정확도 측정
-        if best is None or (m[metric], m["hit3"]) > (best["val"][metric], best["val"]["hit3"]):
+        # 목표 지표가 같으면 종합 점수(라벨 정확도 + Hit@1 + 게이트 균형 정확도)/3 가 높은 쪽
+        if best is None or (m[metric], E._objective(m)) > (best["val"][metric], E._objective(best["val"])):
             best = {"hp": hp, "val": m, "fb": fb, "tried": n}
         if verbose:
             print(f"  [{n:2d}/{len(combos)}] k={k} tau={tau} rerank={'ON' if rerank else 'OFF'} "
