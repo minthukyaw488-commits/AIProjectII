@@ -164,6 +164,8 @@ RAG_REINDEX=1 python eval_ground_truth.py     # → data/eval/eval_report.md
 
 ### 발표 자료 — 평가 슬라이드 (2026-11-24)
 
+![평가 방법](docs/images/slides/eval0_method.png)
+
 | 평가 ① 검색 (5회 반복 검증) | 평가 ② 거짓 답변률 |
 |---|---|
 | ![평가 ① 검색](docs/images/slides/eval1_retrieval.png) | ![평가 ② 거짓 답변률](docs/images/slides/eval2_false_answers.png) |
