@@ -3,9 +3,8 @@
 교수님 피드백 3·5 반영:
   · 데이터를 학습 50% / 검증 25% / 테스트 25% 로 나누고(주제 비율 유지), 이를
     서로 다른 시드로 5번 반복해 '평균 ± 표준편차' 로 보고한다.
-  · 학습(Train)   : ① 키워드가 없는 질문을 위한 '유사 질문 분류기'(학습 질문 TF-IDF)를
-                    학습하고 ② 관련성 게이트 임계값을 학습한다(균형 정확도 최대).
-  · 검증(Val)     : 하이퍼파라미터 조합(유사 질문 k·임계값·재랭킹·후보 수·키워드 가점) 중
+  · 학습(Train)   : 키워드가 없는 질문을 위한 '유사 질문 분류기'(학습 질문 TF-IDF)를 학습한다.
+  · 검증(Val)     : 하이퍼파라미터 조합(유사 질문 k·임계값·재랭킹·후보 수·키워드 가점·거절 게이트) 중
                     검증 점수가 가장 높은 것을 고른다.
   · 테스트(Test)  : 고른 설정으로 딱 한 번 측정 → 보고. 같은 테스트에서 현재 운영 설정
                     (기준선)도 함께 측정해 '개선 전/후' 를 정직하게 비교한다.
@@ -59,6 +58,10 @@ GRID = {
     "rerank": [True, False],        # 재랭커 사용 여부
     "pool": [10, 20],               # 재랭킹 전 임베딩 후보 수
     "kw_boost": [0.0, 0.05, 0.1, 0.2],  # 라벨 키워드를 담은 조각에 주는 가점 w
+    # 거절 게이트: 1위 관련성 점수가 이 값 미만이면 '문서에 없음'. 0.25 = 기존 운영값.
+    # (11-24: 학습 데이터로 '학습'시키면 100문항에서 0 또는 너무 높은 값으로 흔들려, 다른
+    #  하이퍼파라미터처럼 후보 중 검증으로 고르는 방식으로 바꿈)
+    "gate": [0.1, 0.25, 0.4],
 }
 BASELINE = {"knn_k": None, "knn_tau": None, "rerank": True, "pool": 10,
             "kw_boost": 0.0, "gate": 0.25}   # 현재 운영 설정(src/config.py)
@@ -177,6 +180,29 @@ def split_50_25_25(rows: list[dict], seed: int):
     return ordered[:a], ordered[a:b], ordered[b:]
 
 
+def split_kfold(rows: list[dict], k: int, seed: int):
+    """주제 비율을 유지하는 k-fold. fold i = 테스트, fold i+1 = 검증, 나머지 = 학습.
+    k=4 이면 학습 50% / 검증 25% / 테스트 25% 이고, 모든 문항이 테스트에 정확히 한 번 들어간다."""
+    rng = random.Random(seed)
+    by = defaultdict(list)
+    for r in rows:
+        by[gold_label(r)].append(r)
+    folds = [[] for _ in range(k)]
+    j = 0
+    for _lab, items in sorted(by.items()):
+        items = items[:]
+        rng.shuffle(items)
+        for r in items:                     # 주제마다 돌아가며 fold 에 하나씩 → 비율 유지
+            folds[j % k].append(r)
+            j += 1
+    out = []
+    for i in range(k):
+        v = (i + 1) % k
+        train = [r for f, fold in enumerate(folds) if f not in (i, v) for r in fold]
+        out.append((train, folds[v], folds[i]))
+    return out
+
+
 def fit_fallback(train: list[dict], k: int) -> TL.SimilarQuestionFallback:
     """학습 질문으로 유사 질문 분류기 학습(검증·테스트 질문은 보지 않음)."""
     return TL.SimilarQuestionFallback(k).fit([r["q"] for r in train],
@@ -243,27 +269,6 @@ def _evaluate(prepped, hp: dict, gate: float) -> dict:
     }
 
 
-def _fit_gate(prepped, hp) -> float:
-    """학습 데이터에서 게이트 임계값 학습: 균형 정확도(복지 답변율·범위 밖 거절율 평균) 최대.
-    동점이면 더 낮은 임계값(=복지 질문을 덜 거절)."""
-    pts = []                                   # (1위 점수, in?, 규칙으로 이미 거절?)
-    for r, lab, f in prepped:
-        top = _rank(r, f, hp["rerank"], hp["pool"], hp["kw_boost"])[1]
-        pts.append((top, r["scope"] == "in", lab.label in RULE_REFUSE))
-    n_in = sum(1 for p in pts if p[1]) or 1
-    n_out = sum(1 for p in pts if not p[1]) or 1
-    tops = sorted({p[0] for p in pts})
-    cands = [0.0] + [(a + b) / 2 for a, b in zip(tops, tops[1:])] + ([tops[-1] + 1e-3] if tops else [])
-    best_g, best = 0.0, -1.0
-    for g in cands:
-        ans = sum(1 for t, i, rule in pts if i and not rule and t >= g) / n_in
-        ref = sum(1 for t, i, rule in pts if not i and (rule or t < g)) / n_out
-        m = (ans + ref) / 2
-        if m > best + 1e-9:
-            best_g, best = g, m
-    return round(best_g, 4)
-
-
 def _objective(m: dict) -> float:
     """검증 선택 기준 = (라벨 정확도 + Hit@1 + 게이트 균형 정확도) / 3."""
     return (m["label_acc"] + m["hit1"] + m["gate_bacc"]) / 3
@@ -277,8 +282,9 @@ def _combos(has_rerank: bool):
                     continue
                 for pool in GRID["pool"]:
                     for w in GRID["kw_boost"]:
-                        yield {"knn_k": k, "knn_tau": tau, "rerank": rr,
-                               "pool": pool, "kw_boost": w}
+                        for g in GRID["gate"]:
+                            yield {"knn_k": k, "knn_tau": tau, "rerank": rr,
+                                   "pool": pool, "kw_boost": w, "gate": g}
 
 
 def _adv_eval(adv_rows, fb, hp, gate) -> dict:
@@ -306,10 +312,15 @@ def cmd_cv(args):
 
     gt_qs = [r["q"] for r in _load_jsonl(GT_FILE)]
     results = []
-    for rep in range(args.repeats):
-        seed = args.seed + rep
-        ref_rows = [r for r in caches[0][1] if r.get("scope") in ("in", "out")]
-        tr, va, te = split_50_25_25(ref_rows, seed)
+    ref_rows = [r for r in caches[0][1] if r.get("scope") in ("in", "out")]
+    if args.folds:      # k-fold: 모든 문항이 테스트에 정확히 한 번
+        plan = [(i, args.seed, *s) for i, s in enumerate(split_kfold(ref_rows, args.folds, args.seed))]
+        mode = f"**{args.folds}-fold 교차검증**(시드 {args.seed}) — 모든 문항이 테스트에 정확히 한 번"
+    else:               # 50/25/25 무작위 분할을 시드만 바꿔 반복
+        plan = [(rep, args.seed + rep, *split_50_25_25(ref_rows, args.seed + rep))
+                for rep in range(args.repeats)]
+        mode = f"시드 {args.seed}~{args.seed + args.repeats - 1} 로 {args.repeats}회 반복"
+    for rep, seed, tr, va, te in plan:
         split_q = ({r["q"] for r in tr}, {r["q"] for r in va}, {r["q"] for r in te})
         best = None
         best_by_cache = {}
@@ -324,14 +335,13 @@ def cmd_cv(args):
                 if key not in fb_cache:
                     fb = fit_fallback(TR, hp["knn_k"])
                     # 학습 질문 자신은 자기와 가장 비슷하므로(누수) 학습 쪽 라벨은 키워드만으로
-                    fb_cache[key] = (fb, _prep(TR), _prep(VA, fb, hp["knn_tau"]))
-                fb, ptr, pva = fb_cache[key]
-                gate = _fit_gate(ptr, hp)
-                mv = _evaluate(pva, hp, gate)
+                    fb_cache[key] = (fb, _prep(VA, fb, hp["knn_tau"]))
+                fb, pva = fb_cache[key]
+                mv = _evaluate(pva, hp, hp["gate"])
                 score = _objective(mv)
                 cur = best_by_cache.get(ci)
                 if cur is None or score > cur["val_obj"] + 1e-9:
-                    best_by_cache[ci] = {"cache": ci, "hp": {**hp, "gate": gate}, "fb": fb,
+                    best_by_cache[ci] = {"cache": ci, "hp": hp, "fb": fb,
                                          "val_obj": score, "val": mv}
             if best is None or best_by_cache[ci]["val_obj"] > best["val_obj"] + 1e-9:
                 best = best_by_cache[ci]
@@ -365,16 +375,17 @@ def cmd_cv(args):
                         "per_setting": per_setting,
                         "test": test, "baseline_test": baseline,
                         "adv_refused": adv, "adv_refused_baseline": adv_base})
-        print(f"[cv] 반복 {rep + 1}/{args.repeats} seed={seed} 선택={best['hp']} "
+        print(f"[cv] {'fold' if args.folds else '반복'} {rep + 1}/{len(plan)} seed={seed} 선택={best['hp']} "
               f"→ test Hit@1 {test['hit1']:.2f} 라벨 {test['label_acc']:.2f} "
               f"(기준선 Hit@1 {baseline['hit1']:.2f} 라벨 {baseline['label_acc']:.2f})")
     meta_all = [m for m, _ in caches]
-    (EVAL_DIR / "cv_results.json").write_text(
+    suffix = f"_{args.folds}fold" if args.folds else ""
+    (EVAL_DIR / f"cv_results{suffix}.json").write_text(
         json.dumps({"caches": meta_all, "grid": GRID, "baseline": BASELINE,
                     "n_gt": len(gt_qs), "results": results}, ensure_ascii=False, indent=1),
         encoding="utf-8")
-    _write_report(meta_all, results)
-    print(f"[cv] 보고서: {EVAL_DIR / 'cv_report.md'}")
+    _write_report(meta_all, results, mode, suffix)
+    print(f"[cv] 보고서: {EVAL_DIR / f'cv_report{suffix}.md'}")
 
 
 def _ms(vals):
@@ -386,14 +397,15 @@ def _ms(vals):
     return f"{m * 100:.1f}% ± {s * 100:.1f}"
 
 
-def _write_report(metas, results):
+def _write_report(metas, results, mode: str, suffix: str = ""):
     K = [("label_acc", "라벨 정확도(14개 라벨)"), ("hit1", "Hit@1"), ("hit3", "Hit@3"),
          ("answered_in", "복지 질문 답변율(잘못 거절 안 함)"), ("refused_out", "범위 밖 거절율"),
          ("gate_bacc", "게이트 균형 정확도")]
-    L = ["# 복지 질문(RAG) 5회 반복 검증 리포트 (자동 생성)", "",
-         f"- 생성: {time.strftime('%Y-%m-%d %H:%M')} · 재현: `python eval_cv.py cv`",
+    L = [f"# 복지 질문(RAG) {len(results)}회 검증 리포트 (자동 생성)", "",
+         f"- 생성: {time.strftime('%Y-%m-%d %H:%M')} · 재현: `python eval_cv.py cv"
+         f"{' --folds ' + suffix[1:].replace('fold', '') if suffix else ''}`",
          f"- 데이터: `ground_truth_rag.jsonl` 200문항(복지 150 + 범위 밖 50) → "
-         f"주제 비율 유지 **학습 50% / 검증 25% / 테스트 25%**, 시드 {results[0]['seed']}~{results[-1]['seed']} 로 {len(results)}회 반복",
+         f"주제 비율 유지 **학습 50% / 검증 25% / 테스트 25%**, {mode}",
          "- 검색 설정 후보: " + "; ".join(f"`{m['setting']}` (재랭커: {m['reranker'] or '없음'}, {m['backend']})" for m in metas),
          "", "## 1) 테스트 결과 (평균 ± 표준편차)", "",
          "| 지표 | 현재 운영 설정(기준선) | 검증으로 고른 설정 |", "|---|---|---|"]
@@ -427,7 +439,7 @@ def _write_report(metas, results):
         L += ["", "> 검색 단계 지표만입니다. '실제 답변에 거짓이 섞였는가'(거짓 답변률)는 LLM 답변 생성이 "
               "필요해 다음 단계(④, GPU 서버)에서 측정합니다.", ""]
     L += ["## 3) 반복별 선택된 하이퍼파라미터", "",
-          "| 반복 | 학습/검증/테스트 | 검색 설정 | 재랭커 | 후보 수 | 키워드 가점 w | 게이트(학습) | 유사 질문 k / 임계값 | 검증 점수 |",
+          "| 반복 | 학습/검증/테스트 | 검색 설정 | 재랭커 | 후보 수 | 키워드 가점 w | 게이트 | 유사 질문 k / 임계값 | 검증 점수 |",
           "|---|---|---|---|---|---|---|---|---|"]
     for r in results:
         h = r["hp"]
@@ -452,13 +464,13 @@ def _write_report(metas, results):
           "2. **관련성 점수**: 재랭커(`bge-reranker-v2-m3`) 로짓의 시그모이드(0~1). 재랭커를 끄면 임베딩 코사인 유사도.",
           "3. **순위**: 관련성 점수 + w × [조각이 질문 라벨의 키워드를 포함]. w 는 검증으로 선택.",
           "4. **거절(게이트)**: 1위 조각의 관련성 점수가 임계값 미만이면 답을 지어내지 않고 주민센터 안내. "
-          "임계값은 학습 데이터에서 '복지 질문 답변율'과 '범위 밖 거절율'의 평균이 최대가 되는 값으로 학습.",
+          "임계값은 후보(0.1 / 0.25 / 0.4) 중 검증 점수가 가장 높은 값을 선택.",
           "5. **Hit@K 판정**: 정답지의 정답 키워드(gold_keyword)가 상위 K개 조각에 들어 있으면 정답(기존 리포트와 같은 기준).",
           "", "## 7) 한계", "",
           "- 테스트가 반복마다 50문항(주제당 약 3~4문항)이라 주제별 수치는 흔들림이 큽니다 → 표준편차를 함께 봅니다.",
           "- Hit@K 는 '근거가 검색됐는가'까지만 봅니다. 답변의 사실 정확도·거짓 답변률은 ④(LLM 생성 평가)에서 측정합니다.",
           "", "*이 파일은 `eval_cv.py cv` 가 자동 생성합니다. 손으로 고치지 마세요.*"]
-    (EVAL_DIR / "cv_report.md").write_text("\n".join(L) + "\n", encoding="utf-8")
+    (EVAL_DIR / f"cv_report{suffix}.md").write_text("\n".join(L) + "\n", encoding="utf-8")
 
 
 def main():
@@ -471,6 +483,8 @@ def main():
     c = sub.add_parser("cv", help="50/25/25 × 반복 검증 + 하이퍼파라미터 선택")
     c.add_argument("--repeats", type=int, default=5)
     c.add_argument("--seed", type=int, default=42)
+    c.add_argument("--folds", type=int, default=0,
+                   help="k-fold 교차검증(예: 4 → 학습 50/검증 25/테스트 25, 모든 문항 테스트 1회). 0이면 반복 분할")
     c.add_argument("--caches", nargs="*", help="사용할 캐시 파일(기본: cv_cache/*.json 전부)")
     args = ap.parse_args()
     {"dump": cmd_dump, "cv": cmd_cv}[args.cmd](args)
