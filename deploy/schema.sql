@@ -62,5 +62,12 @@ CREATE TABLE IF NOT EXISTS welfare_catalog (
 -- 비밀번호 요청(어르신이 '사회복지사에게 알리기'를 누름) — 앱이 없으면 자동으로 만듦
 CREATE TABLE IF NOT EXISTS pw_requests (
   name         VARCHAR(100) PRIMARY KEY,
-  requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  issued_at    TIMESTAMP NULL                    -- 사회복지사가 임시 비밀번호를 보낸 시각
+) ENGINE=InnoDB;
+
+-- 임시 비밀번호(사회복지사가 만든 것)로 로그인하면 새 비밀번호를 직접 정하게 함
+CREATE TABLE IF NOT EXISTS pw_temp (
+  name       VARCHAR(100) PRIMARY KEY,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
