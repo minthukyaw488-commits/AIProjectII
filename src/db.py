@@ -183,9 +183,23 @@ def list_user_names() -> list[str]:
         return sorted(_load_json(_USERS_JSON))
 
 
-def reset_password(name: str, new_password: str):
+def _write_pw_hash(cur_or_none, name: str, pw_hash: str) -> bool:
+    """users 의 비밀번호 해시 교체(MySQL 커서 또는 파일). 계정이 없으면 False."""
+    if cur_or_none is not None:
+        return bool(cur_or_none.execute("UPDATE users SET pw_hash=%s WHERE name=%s",
+                                        (pw_hash, name)))
+    users = _load_json(_USERS_JSON)
+    if name not in users:
+        return False
+    users[name] = pw_hash
+    _save_json(_USERS_JSON, users)
+    return True
+
+
+def reset_password(name: str, new_password: str, temporary: bool = False):
     """관리자(사회복지사)가 어르신 비밀번호를 새로 정해 줌. (ok, msg).
-    어르신이 비밀번호를 잊었을 때 쓰는 기능 — 일반 화면에서는 부르지 않는다."""
+    temporary=True 면 '임시 비밀번호'로 표시 → 어르신이 다음 로그인 때 새 비밀번호를
+    직접 정하게 한다(사회복지사가 최종 비밀번호를 알지 못하도록)."""
     if not name or not new_password:
         return False, "성함과 새 비밀번호를 입력해 주세요."
     if len(new_password) < 4:
@@ -196,26 +210,87 @@ def reset_password(name: str, new_password: str):
         if c:
             try:
                 with c.cursor() as cur:
-                    n = cur.execute("UPDATE users SET pw_hash=%s WHERE name=%s", (pw, name))
-                    if not n:
+                    if not _write_pw_hash(cur, name, pw):
                         return False, "그런 계정이 없습니다."
+                    _ensure_pw_tables(cur)
+                    if temporary:
+                        cur.execute("REPLACE INTO pw_temp (name) VALUES (%s)", (name,))
+                        cur.execute("UPDATE pw_requests SET issued_at=CURRENT_TIMESTAMP "
+                                    "WHERE name=%s", (name,))
+                    else:
+                        cur.execute("DELETE FROM pw_temp WHERE name=%s", (name,))
                 return True, "비밀번호를 바꿨습니다."
             finally:
                 c.close()
-        users = _load_json(_USERS_JSON)
-        if name not in users:
+        if not _write_pw_hash(None, name, pw):
             return False, "그런 계정이 없습니다."
-        users[name] = pw
-        _save_json(_USERS_JSON, users)
+        temp = _load_json(_PWTEMP_JSON)
+        if temporary:
+            temp[name] = _now()
+            reqs = _load_reqs()
+            if name in reqs:
+                reqs[name]["issued"] = _now()
+                _save_json(_PWREQ_JSON, reqs)
+        else:
+            temp.pop(name, None)
+        _save_json(_PWTEMP_JSON, temp)
         return True, "비밀번호를 바꿨습니다."
 
 
+def set_own_password(name: str, new_password: str):
+    """어르신이 직접 새 비밀번호를 정함(임시 비밀번호 표시도 지움). (ok, msg)."""
+    if not new_password or len(new_password) < 4:
+        return False, "비밀번호는 4자 이상이어야 합니다."
+    return reset_password(name, new_password, temporary=False)
+
+
+def is_temp_password(name: str) -> bool:
+    """사회복지사가 만들어 준 임시 비밀번호를 아직 쓰고 있으면 True."""
+    with _lock:
+        c = _conn()
+        if c:
+            try:
+                with c.cursor() as cur:
+                    _ensure_pw_tables(cur)
+                    cur.execute("SELECT 1 FROM pw_temp WHERE name=%s", (name,))
+                    return cur.fetchone() is not None
+            finally:
+                c.close()
+        return name in _load_json(_PWTEMP_JSON)
+
+
 # ── 비밀번호 요청(어르신 → 사회복지사) ─────────────────────────────────
-_PWREQ_JSON = os.path.join(_DATA, "pw_requests.json")   # 파일 폴백: {성함: 요청시각}
-_PWREQ_SQL = """CREATE TABLE IF NOT EXISTS pw_requests (
+# 파일 폴백: pw_requests.json {성함: {"at": 요청시각, "issued": 임시비번 보낸 시각|None}}
+#           pw_temp.json     {성함: 임시비번 만든 시각}  — 다음 로그인 때 새 비밀번호 설정
+_PWREQ_JSON = os.path.join(_DATA, "pw_requests.json")
+_PWTEMP_JSON = os.path.join(_DATA, "pw_temp.json")
+_PW_TABLES_SQL = (
+    """CREATE TABLE IF NOT EXISTS pw_requests (
   name         VARCHAR(100) PRIMARY KEY,
-  requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"""
+  requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  issued_at    TIMESTAMP NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS pw_temp (
+  name       VARCHAR(100) PRIMARY KEY,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+)
+
+
+def _ensure_pw_tables(cur):
+    for q in _PW_TABLES_SQL:
+        cur.execute(q)
+
+
+def _now() -> str:
+    import datetime
+    return datetime.datetime.now().isoformat(timespec="minutes")
+
+
+def _load_reqs() -> dict:
+    """pw_requests.json 읽기(예전 형식 {성함: 시각 문자열}도 읽음)."""
+    raw = _load_json(_PWREQ_JSON)
+    return {k: (v if isinstance(v, dict) else {"at": v, "issued": None}) for k, v in raw.items()}
 
 
 def add_pw_request(name: str):
@@ -225,39 +300,42 @@ def add_pw_request(name: str):
         return False, "먼저 '성함' 칸에 이름을 적어 주세요."
     if name not in list_user_names():
         return False, "이 성함으로 가입된 계정이 없습니다. 성함을 다시 확인해 주세요."
-    import datetime
     with _lock:
         c = _conn()
         if c:
             try:
                 with c.cursor() as cur:
-                    cur.execute(_PWREQ_SQL)
+                    _ensure_pw_tables(cur)
                     cur.execute("REPLACE INTO pw_requests (name) VALUES (%s)", (name,))
                 return True, "ok"
             finally:
                 c.close()
-        reqs = _load_json(_PWREQ_JSON)
-        reqs[name] = datetime.datetime.now().isoformat(timespec="minutes")
+        reqs = _load_reqs()
+        reqs[name] = {"at": _now(), "issued": None}
         _save_json(_PWREQ_JSON, reqs)
         return True, "ok"
 
 
-def list_pw_requests() -> list[tuple[str, str]]:
-    """처리 안 된 비밀번호 요청 [(성함, 요청시각 'YYYY-MM-DDTHH:MM')] — 최근 순."""
+def list_pw_requests() -> list[tuple[str, str, str | None]]:
+    """처리 안 된 비밀번호 요청 [(성함, 요청시각, 임시비번 보낸 시각|None)] — 최근 순.
+    시각은 'YYYY-MM-DDTHH:MM'."""
     with _lock:
         c = _conn()
         if c:
             try:
                 with c.cursor() as cur:
-                    cur.execute(_PWREQ_SQL)
-                    cur.execute("SELECT name, requested_at FROM pw_requests "
+                    _ensure_pw_tables(cur)
+                    cur.execute("SELECT name, requested_at, issued_at FROM pw_requests "
                                 "ORDER BY requested_at DESC")
-                    return [(r["name"], r["requested_at"].isoformat(timespec="minutes"))
+                    return [(r["name"], r["requested_at"].isoformat(timespec="minutes"),
+                             r["issued_at"].isoformat(timespec="minutes")
+                             if r["issued_at"] else None)
                             for r in cur.fetchall()]
             finally:
                 c.close()
-        reqs = _load_json(_PWREQ_JSON)
-        return sorted(reqs.items(), key=lambda kv: kv[1], reverse=True)
+        reqs = _load_reqs()
+        return sorted(((k, v["at"], v.get("issued")) for k, v in reqs.items()),
+                      key=lambda t: t[1], reverse=True)
 
 
 def close_pw_request(name: str):
@@ -267,12 +345,12 @@ def close_pw_request(name: str):
         if c:
             try:
                 with c.cursor() as cur:
-                    cur.execute(_PWREQ_SQL)
+                    _ensure_pw_tables(cur)
                     cur.execute("DELETE FROM pw_requests WHERE name=%s", (name,))
                 return
             finally:
                 c.close()
-        reqs = _load_json(_PWREQ_JSON)
+        reqs = _load_reqs()
         if reqs.pop(name, None) is not None:
             _save_json(_PWREQ_JSON, reqs)
 

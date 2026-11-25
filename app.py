@@ -1637,6 +1637,89 @@ def login_screen():
     st.markdown('</div>', unsafe_allow_html=True)
 
 
+def _needs_new_password() -> bool:
+    """사회복지사가 만든 임시 비밀번호로 들어왔는지(세션당 한 번만 DB 확인)."""
+    user = st.session_state.get("auth_user")
+    if not user or st.session_state.get("is_admin"):
+        return False
+    cached = st.session_state.get("_pw_temp_chk")
+    if not cached or cached[0] != user:
+        try:
+            from src import db
+            temp = db.is_temp_password(user)
+        except Exception:
+            temp = False
+        cached = (user, temp)
+        st.session_state["_pw_temp_chk"] = cached
+    return cached[1]
+
+
+def _pw_change_link():
+    """내 정보 '보기' 화면 아래 '🔑 비밀번호 바꾸기'(처음 입력·수정 중에는 숨김)."""
+    p = st.session_state.get("profile") or {}
+    has_saved = any(v is not None for v in p.values())
+    if not has_saved or st.session_state.get("profile_edit"):
+        return
+    _, mid, _ = st.columns([1, 2, 1])
+    if mid.button("🔑 비밀번호 바꾸기", key="pw_change_open_btn", use_container_width=True):
+        st.session_state["pw_change_open"] = True
+        st.rerun()
+
+
+def change_password_screen(forced: bool):
+    """새 비밀번호 정하기.
+    forced=True : 임시 비밀번호로 들어온 분 — 건너뛸 수 없음(사회복지사가 최종 비밀번호를 모르게).
+    forced=False: 내 정보에서 직접 바꾸기 — 지금 비밀번호를 한 번 확인."""
+    from src import db
+    inject_css()
+    st.markdown(_NARROW_FORM_CSS.format(w=560), unsafe_allow_html=True)
+    user = st.session_state.get("auth_user", "")
+    st.markdown('<div class="gov-wrap sec" style="max-width:520px;margin:1vh auto 0">',
+                unsafe_allow_html=True)
+    if not forced and st.button("← 돌아가기", key="pwc_back"):
+        st.session_state.pop("pw_change_open", None)
+        st.rerun()
+    st.markdown(
+        '<div style="text-align:center;margin:6px 0 10px">'
+        '<div class="seal" style="margin:0 auto 12px;width:52px;height:52px;font-size:26px">🔑</div>'
+        '<div style="font-size:23px;font-weight:800;color:#0f2f6f;letter-spacing:-.03em">'
+        + ("새 비밀번호 만들기" if forced else "비밀번호 바꾸기") + '</div></div>',
+        unsafe_allow_html=True)
+    if forced:
+        st.info(f"{user} 님, 사회복지사에게 받으신 **임시 비밀번호**를 "
+                "**나만 아는 새 비밀번호**로 바꿔 주세요. 다음부터는 새 비밀번호로 들어오시면 됩니다.")
+    st.caption("💡 생일·전화번호 끝자리처럼 기억하기 쉬운 숫자 4자리 이상이면 됩니다.")
+    with st.form("pw_change_form", border=False):
+        cur_pw = None
+        if not forced:
+            cur_pw = st.text_input("지금 비밀번호", type="password", key="pwc_cur",
+                                   autocomplete="current-password")
+        new1 = st.text_input("새 비밀번호", type="password", key="pwc_new1",
+                             autocomplete="new-password")
+        new2 = st.text_input("새 비밀번호 한 번 더", type="password", key="pwc_new2",
+                             autocomplete="new-password")
+        go = st.form_submit_button("저장하고 시작하기" if forced else "저장",
+                                   type="primary", use_container_width=True)
+    if go:
+        if not forced and not db.login_check(user, cur_pw or "")[0]:
+            st.warning("지금 비밀번호가 맞지 않습니다. 다시 확인해 주세요.")
+        elif len(new1 or "") < 4:
+            st.warning("새 비밀번호는 4자 이상으로 적어 주세요.")
+        elif new1 != new2:
+            st.warning("두 번 적으신 새 비밀번호가 서로 다릅니다.")
+        elif (lambda r: r[0] and "미설정" not in r[1])(db.login_check(user, new1)):
+            st.warning("지금 쓰시는 비밀번호와 다른 번호로 정해 주세요.")
+        else:
+            ok, msg = db.set_own_password(user, new1)
+            if ok:
+                st.session_state["_pw_temp_chk"] = (user, False)
+                st.session_state.pop("pw_change_open", None)
+                st.toast("✅ 새 비밀번호를 저장했습니다.")
+                st.rerun()
+            st.warning(msg)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 def profile_screen():
     """내 정보 — 저장된 정보가 있으면 먼저 '보기' 화면(실수로 바뀌지 않게)을 보여 주고,
     '✏️ 내 정보 수정'을 눌러야 고칠 수 있다. 처음 가입한 분은 바로 입력 화면."""
@@ -2532,24 +2615,28 @@ def _admin_pw_requests():
         return
     st.markdown(f'<div style="color:#b4440a;font-weight:800">📬 비밀번호 요청 {len(reqs)}건</div>',
                 unsafe_allow_html=True)
-    for i, (nm, at) in enumerate(reqs):
+    for i, (nm, at, issued) in enumerate(reqs):
         try:
             phone = (db.get_profile(nm) or {}).get("phone")
         except Exception:
             phone = None
         when = at.replace("T", " ")
+        # 임시 비밀번호를 '보냈다'는 사실만 표시(어르신이 썼는지·바꿨는지는 보여 주지 않음)
+        sent = (f'<div style="color:#14532d;font-size:.85rem;font-weight:700">🔑 임시 비밀번호 보냄 · '
+                f'{issued.replace("T", " ")}</div>') if issued else ""
         with st.container(border=True):
             c1, c2, c3 = st.columns([3, 2, 1.3], vertical_alignment="center")
             c1.markdown(f'<b style="font-size:1.05rem">{_h.escape(nm)}</b> 님 · ☎ '
                         f'{_h.escape(phone) if phone else "연락처 없음"}'
-                        f'<div style="color:#6b7383;font-size:.85rem">{when} 요청</div>',
+                        f'<div style="color:#6b7383;font-size:.85rem">{when} 요청</div>{sent}',
                         unsafe_allow_html=True)
             if c2.button("새 비밀번호 만들기", type="primary", key=f"pwreq_new_{i}",
                          use_container_width=True):
                 new_pw = _new_simple_pw()
-                ok, msg = db.reset_password(nm, new_pw)
+                ok, msg = db.reset_password(nm, new_pw, temporary=True)
                 if ok:
                     st.session_state["pwreset_done"] = (nm, new_pw)
+                    st.rerun()                      # '임시 비밀번호 보냄' 표시 갱신
                 else:
                     st.warning(msg)
             if c3.button("처리 완료", key=f"pwreq_done_{i}", use_container_width=True):
@@ -2558,8 +2645,9 @@ def _admin_pw_requests():
                 st.rerun()
         done = st.session_state.get("pwreset_done")
         if done and done[0] == nm:
-            st.success(f"{nm} 님의 새 비밀번호: **{done[1]}** — 전화로 알려 드린 뒤 "
-                       "'처리 완료'를 눌러 주세요. (종이에 적어 드리면 좋습니다)")
+            st.success(f"{nm} 님의 임시 비밀번호: **{done[1]}** — 전화로 알려 드린 뒤 "
+                       "'처리 완료'를 눌러 주세요. 어르신이 이 번호로 들어오시면 "
+                       "새 비밀번호를 직접 정하시게 됩니다.")
 
 
 def _admin_password_reset():
@@ -2584,15 +2672,15 @@ def _admin_password_reset():
     st.caption("본인(또는 가족)이 맞는지 전화·방문으로 꼭 확인한 뒤 초기화하세요.")
     if st.button("새 비밀번호 만들기", type="primary", key="pwreset_go", disabled=not who):
         new_pw = _new_simple_pw()
-        ok, msg = db.reset_password(who, new_pw)
+        ok, msg = db.reset_password(who, new_pw, temporary=True)
         if ok:
             st.session_state["pwreset_done"] = (who, new_pw)
         else:
             st.warning(msg)
     done = st.session_state.get("pwreset_done")
     if done and done[0] == who:                     # 다른 분을 고르면 이전 번호는 숨김
-        st.success(f"{done[0]} 님의 새 비밀번호: **{done[1]}** — 어르신께 알려 드리세요. "
-                   "(잊지 않으시도록 종이에 적어 드리면 좋습니다)")
+        st.success(f"{done[0]} 님의 임시 비밀번호: **{done[1]}** — 어르신께 알려 드리세요. "
+                   "이 번호로 들어오시면 새 비밀번호를 직접 정하시게 됩니다.")
 
 
 def main():
@@ -2641,8 +2729,15 @@ def main():
     if st.session_state.get("is_admin"):
         admin_screen()               # 관리자(사회복지사) 계정 → 전체 어르신 이상신호 모니터
         return
+    if _needs_new_password():        # 임시 비밀번호로 들어온 분 → 새 비밀번호부터(건너뛰기 없음)
+        change_password_screen(forced=True)
+        return
+    if st.session_state.get("pw_change_open"):   # 내 정보 → '🔑 비밀번호 바꾸기'
+        change_password_screen(forced=False)
+        return
     if not st.session_state.get("profile_done"):
         profile_screen()
+        _pw_change_link()
         return
 
     # 포털부터 어시스턴트 필요 — 지연 로딩(화면은 먼저 뜨고, 첫 질문에서만 준비).

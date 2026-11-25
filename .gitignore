@@ -38,3 +38,4 @@ data/.app_secret
 # 피드백 루프 코드북 — 서버에서 tune.py 로 생성(서버마다 다를 수 있음)
 data/best_params.json
 data/pw_requests.json
+data/pw_temp.json
