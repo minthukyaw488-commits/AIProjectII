@@ -1676,6 +1676,12 @@ def change_password_screen(forced: bool):
     user = st.session_state.get("auth_user", "")
     st.markdown('<div class="gov-wrap sec" style="max-width:520px;margin:1vh auto 0">',
                 unsafe_allow_html=True)
+    if not forced:                    # 내 정보의 '← 돌아가기'와 같은 모양(왼쪽 위, 작게)
+        st.markdown('<style>.st-key-pwc_back{width:auto !important}'
+                    '.st-key-pwc_back button{width:auto !important;min-height:48px;padding:6px 18px;'
+                    'border:2px solid #b9b3a4;border-radius:12px;background:#fff}'
+                    '.st-key-pwc_back button p{font-size:1.08rem !important;font-weight:700;'
+                    'white-space:nowrap}</style>', unsafe_allow_html=True)
     if not forced and st.button("← 돌아가기", key="pwc_back"):
         st.session_state.pop("pw_change_open", None)
         st.rerun()
