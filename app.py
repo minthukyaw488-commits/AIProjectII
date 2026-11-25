@@ -1147,6 +1147,8 @@ def _load_user_session(name: str):
         if prof:
             st.session_state["profile"] = prof
             st.session_state["profile_done"] = True
+            if st.session_state.pop("_first_profile", False):   # 방금 가입(번호만 저장됨)
+                st.session_state["profile_done"] = False         # → 처음 '내 정보' 입력 화면
     except Exception:
         pass
     try:
@@ -1441,6 +1443,13 @@ def login_screen():
             n2 = st.text_input("성함", key="su_name", placeholder="예: 홍길동")
             p2 = st.text_input("비밀번호", key="su_pw", type="password")
             p3 = st.text_input("비밀번호 확인", key="su_pw2", type="password")
+            st.markdown(_PHONE_WHY_HTML, unsafe_allow_html=True)
+            ph2 = st.text_input("내 전화번호 (선택)", key="su_phone", placeholder="예: 010-1234-5678",
+                                autocomplete="tel")
+            st.caption(_PHONE_HELP)           # '?' 아이콘 대신 늘 보이게(어르신은 잘 누르지 않음)
+            cp2 = st.text_input("필요할 때 연락할 번호 (선택)", key="su_contact",
+                                placeholder="예: 010-9876-5432")
+            st.caption(_CONTACT_HELP)
             submitted2 = st.form_submit_button("회원가입", type="primary",
                                                use_container_width=True)
         if submitted2:
@@ -1448,15 +1457,47 @@ def login_screen():
                 st.warning("비밀번호가 서로 다릅니다.")
             elif config.is_admin(n2):
                 st.warning("이 이름은 사용할 수 없습니다. 다른 성함으로 가입해 주세요.")
+            elif _clean_phone(ph2) is None or _clean_phone(cp2) is None:
+                st.warning("전화번호는 숫자 9~11자리로 적어 주세요. (예: 010-1234-5678) "
+                           "모르시면 비워 두셔도 됩니다.")
             else:
                 ok, msg = db.signup(n2.strip(), p2)
                 if ok:
                     st.success(msg + " — 바로 시작합니다.")
+                    if _clean_phone(ph2) or _clean_phone(cp2):   # 번호만 먼저 저장(내 정보는 다음 화면)
+                        try:
+                            db.save_profile(n2.strip(), {"phone": _clean_phone(ph2) or None,
+                                                         "contact_phone": _clean_phone(cp2) or None})
+                        except Exception:
+                            pass
+                        st.session_state["_first_profile"] = True
                     _enter(n2.strip())
                 else:
                     st.warning(msg)
     st.caption("※ 프로토타입 — 실제 서비스에서는 본인 인증·개인정보 동의가 필요합니다.")
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+# 전화번호 안내 문구 — 회원가입·내 정보에서 같은 말을 쓴다(무엇에 쓰는지 분명히)
+_PHONE_HELP = "비밀번호를 잊으셨을 때 담당 사회복지사가 이 번호로 연락드려요."
+_CONTACT_HELP = ("내 전화가 없거나 연락이 안 될 때 대신 연락받을 분의 번호예요. "
+                 "이웃·지인·요양보호사 등 누구든 괜찮아요. 오랫동안 연락이 닿지 않을 때도 "
+                 "이 번호로 안부를 여쭐 수 있어요.")
+_PHONE_WHY_HTML = (
+    '<div style="background:#f1f5fd;border:1.5px solid #c9d6f2;border-radius:12px;'
+    'padding:11px 14px;font-size:1rem;line-height:1.6;margin:4px 0 10px">'
+    '📞 <b>전화번호는 왜 적나요?</b><br>'
+    '비밀번호를 잊으셨을 때 연락드리고, 안부를 여쭙는 데<b>만</b> 써요. '
+    '<b>담당 사회복지사만</b> 볼 수 있어요. 적지 않으셔도 가입할 수 있어요.</div>')
+
+
+def _clean_phone(s: str):
+    """전화번호 정리: 숫자 9~11자리면 그대로(앞뒤 공백 제거), 비었으면 '', 잘못되면 None."""
+    import re as _re
+    s = (s or "").strip()
+    if not s:
+        return ""
+    return s if 9 <= len(_re.sub(r"\D", "", s)) <= 11 else None
 
 
 def _needs_new_password() -> bool:
@@ -1555,7 +1596,8 @@ def profile_screen():
     st.markdown(_NARROW_FORM_CSS.format(w=660) + _PROFILE_VIEW_CSS, unsafe_allow_html=True)
     p = st.session_state.get("profile") or {}
     user = st.session_state.get("auth_user", "")
-    has_saved = any(v is not None for v in p.values())
+    # 가입할 때 적은 전화번호만 있는 경우는 '아직 입력 안 함'으로 본다(처음 입력 화면)
+    has_saved = any(v is not None for k, v in p.items() if k not in ("phone", "contact_phone"))
     editing = st.session_state.get("profile_edit", not has_saved)
     st.markdown('<div class="gov-wrap sec" style="max-width:620px;margin:1vh auto 0">',
                 unsafe_allow_html=True)
@@ -1575,7 +1617,8 @@ def profile_screen():
         rows = [("나이", f"만 {p['age']}세" if p.get("age") is not None else "입력 안 함"),
                 ("성별", p.get("gender") or "입력 안 함"),
                 ("사시는 구", p.get("district") or "입력 안 함"),
-                ("연락처", p.get("phone") or "입력 안 함")]
+                ("내 전화번호", p.get("phone") or "입력 안 함"),
+                ("필요할 때 연락할 번호", p.get("contact_phone") or "입력 안 함")]
         rows += [(label, rev[p.get(key)]) for key, label in _PROFILE_YN]
         import html as _h
         st.markdown('<div class="pf-card">' + "".join(
@@ -1602,8 +1645,13 @@ def profile_screen():
     districts = ["동구", "중구", "서구", "유성구", "대덕구", "선택 안 함"]
     di = districts.index(p["district"]) if p.get("district") in districts else len(districts) - 1
     district = st.radio("사시는 구", districts, index=di, horizontal=True, key="pf_district")
-    phone_s = st.text_input("연락처 (선택)", value=p.get("phone") or "", placeholder="예: 010-1234-5678",
-                            help="담당 사회복지사가 안부를 여쭐 때 쓰입니다. 적지 않으셔도 됩니다.")
+    st.markdown(_PHONE_WHY_HTML, unsafe_allow_html=True)
+    phone_s = st.text_input("내 전화번호 (선택)", value=p.get("phone") or "",
+                            placeholder="예: 010-1234-5678")
+    st.caption(_PHONE_HELP)
+    contact_s = st.text_input("필요할 때 연락할 번호 (선택)", value=p.get("contact_phone") or "",
+                              placeholder="예: 010-9876-5432")
+    st.caption(_CONTACT_HELP)
     ans = {key: st.radio(label, opts, index=opts.index(rev[p.get(key)]), horizontal=True,
                          key=f"pf_{key}")
            for key, label in _PROFILE_YN}
@@ -1621,11 +1669,11 @@ def profile_screen():
             age = int(age_s) if age_s.strip() else None
         except ValueError:
             age = None
-        import re as _re
-        _digits = _re.sub(r"\D", "", phone_s or "")
-        phone = phone_s.strip() if 9 <= len(_digits) <= 11 else None   # 숫자 9~11자리만 저장
+        phone = _clean_phone(phone_s) or None             # 숫자 9~11자리만 저장
+        contact = _clean_phone(contact_s) or None
         prof = {"age": age, "district": None if district == "선택 안 함" else district,
                 "gender": None if gender == "선택 안 함" else gender, "phone": phone,
+                "contact_phone": contact,
                 **{k: tri[v] for k, v in ans.items()}}
         st.session_state["profile"] = prof
         st.session_state["profile_done"] = True
@@ -2370,20 +2418,53 @@ def _forgot_password_box():
         if not st.session_state.get("pwreq_name") and st.session_state.get("li_name"):
             st.session_state["pwreq_name"] = st.session_state["li_name"]
         nm_in = st.text_input("성함", key="pwreq_name", placeholder="예: 홍길동")
+        need_for = st.session_state.get("pwreq_need_phone")     # 등록 번호가 없던 성함
+        nm = (nm_in or "").strip()
+        ph_in = None
+        if need_for and need_for == nm:
+            st.markdown(
+                '<div style="background:#fff3e6;border:1.5px solid #e8590c;border-radius:12px;'
+                'padding:10px 13px;font-size:1rem;line-height:1.6;color:#7c2d12">'
+                '등록된 전화번호가 없어요. <b>연락받으실 번호</b>를 적어 주세요.</div>',
+                unsafe_allow_html=True)
+            ph_in = st.text_input("연락받을 전화번호", key="pwreq_phone",
+                                  placeholder="예: 010-1234-5678")
         if st.button("📞 사회복지사에게 알리기", key="pwreq_send", use_container_width=True):
-            nm = (nm_in or "").strip()
-            if config.is_admin(nm):
-                ok, msg = False, "관리자 계정은 서버 담당자에게 문의하세요."
-            else:
-                try:
-                    ok, msg = db.add_pw_request(nm)
-                except Exception:
-                    ok, msg = False, "잠시 후 다시 눌러 주세요."
+            ok, msg = _send_pw_request(nm, ph_in, need_for == nm and bool(need_for))
             if ok:
                 st.session_state["pwreq_sent"] = nm
+                st.session_state.pop("pwreq_need_phone", None)
+                st.rerun()
+            if msg == "NEED_PHONE":
+                st.session_state["pwreq_need_phone"] = nm
                 st.rerun()
             st.warning(msg)
-        st.caption("직접 연락: 가까운 복지관·주민센터")
+        st.caption("📍 전화가 없으시면: 신분증을 가지고 가까운 **주민센터·복지관**에 직접 "
+                   "오시면 바로 새 비밀번호를 드려요.")
+
+
+def _send_pw_request(nm: str, ph_in, asked_phone: bool):
+    """비밀번호 요청 보내기. 등록된 번호(내 번호·필요할 때 연락할 번호)가 있으면 바로 보내고,
+    없으면 'NEED_PHONE' → 연락받을 번호 칸을 보여 준다(그 번호는 본인 확인이 필요하다고 표시)."""
+    from src import db
+    if not nm:
+        return False, "먼저 '성함' 칸에 이름을 적어 주세요."
+    if config.is_admin(nm):
+        return False, "관리자 계정은 서버 담당자에게 문의하세요."
+    try:
+        if nm not in db.list_user_names():
+            return False, "이 성함으로 가입된 계정이 없습니다. 성함을 다시 확인해 주세요."
+        prof = db.get_profile(nm) or {}
+        if prof.get("phone") or prof.get("contact_phone"):
+            return db.add_pw_request(nm)                  # 등록 번호로 연락
+        if not asked_phone:
+            return False, "NEED_PHONE"
+        ph = _clean_phone(ph_in)
+        if not ph:
+            return False, "연락받을 전화번호를 숫자 9~11자리로 적어 주세요. (예: 010-1234-5678)"
+        return db.add_pw_request(nm, req_phone=ph)
+    except Exception:
+        return False, "잠시 후 다시 눌러 주세요."
 
 
 def _new_simple_pw() -> str:
@@ -2404,19 +2485,30 @@ def _admin_pw_requests():
         return
     st.markdown(f'<div style="color:#b4440a;font-weight:800">📬 비밀번호 요청 {len(reqs)}건</div>',
                 unsafe_allow_html=True)
-    for i, (nm, at, issued) in enumerate(reqs):
+    for i, (nm, at, issued, req_phone) in enumerate(reqs):
         try:
-            phone = (db.get_profile(nm) or {}).get("phone")
+            prof = db.get_profile(nm) or {}
         except Exception:
-            phone = None
+            prof = {}
+        phone, contact = prof.get("phone"), prof.get("contact_phone")
         when = at.replace("T", " ")
         # 임시 비밀번호를 '보냈다'는 사실만 표시(어르신이 썼는지·바꿨는지는 보여 주지 않음)
         sent = (f'<div style="color:#14532d;font-size:.85rem;font-weight:700">🔑 임시 비밀번호 보냄 · '
                 f'{issued.replace("T", " ")}</div>') if issued else ""
         with st.container(border=True):
             c1, c2, c3 = st.columns([3, 2, 1.3], vertical_alignment="center")
-            c1.markdown(f'<b style="font-size:1.05rem">{_h.escape(nm)}</b> 님 · ☎ '
-                        f'{_h.escape(phone) if phone else "연락처 없음"}'
+            if phone or contact:                       # 등록된 번호로 연락(본인이 가입 때 적은 번호)
+                nums = "".join(
+                    f'<div style="font-size:.95rem">☎ {label} <b>{_h.escape(v)}</b></div>'
+                    for label, v in (("내 번호", phone), ("필요할 때 연락", contact)) if v)
+            elif req_phone:                           # 등록 번호 없음 → 요청 때 적은 번호
+                nums = (f'<div style="font-size:.95rem">☎ 요청 때 적은 번호 <b>{_h.escape(req_phone)}</b></div>'
+                        '<div style="color:#b4440a;font-size:.85rem;font-weight:700">'
+                        '⚠️ 등록된 번호 없음 — 본인 확인 필요 '
+                        '(내 정보의 나이·사는 구를 여쭤 보세요)</div>')
+            else:
+                nums = '<div style="font-size:.95rem">☎ 연락처 없음</div>'
+            c1.markdown(f'<b style="font-size:1.05rem">{_h.escape(nm)}</b> 님{nums}'
                         f'<div style="color:#6b7383;font-size:.85rem">{when} 요청</div>{sent}',
                         unsafe_allow_html=True)
             if c2.button("새 비밀번호 만들기", type="primary", key=f"pwreq_new_{i}",
@@ -2458,7 +2550,7 @@ def _admin_password_reset():
         return
     who = st.selectbox("어르신 성함", names, index=None, placeholder="성함을 고르세요",
                        key="pwreset_who")
-    st.caption("본인(또는 가족)이 맞는지 전화·방문으로 꼭 확인한 뒤 초기화하세요.")
+    st.caption("본인이 맞는지 전화·방문으로 꼭 확인한 뒤 초기화하세요.")
     if st.button("새 비밀번호 만들기", type="primary", key="pwreset_go", disabled=not who):
         new_pw = _new_simple_pw()
         ok, msg = db.reset_password(who, new_pw, temporary=True)

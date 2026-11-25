@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS welfare_catalog (
 CREATE TABLE IF NOT EXISTS pw_requests (
   name         VARCHAR(100) PRIMARY KEY,
   requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  issued_at    TIMESTAMP NULL                    -- 사회복지사가 임시 비밀번호를 보낸 시각
+  issued_at    TIMESTAMP NULL,                   -- 사회복지사가 임시 비밀번호를 보낸 시각
+  req_phone    VARCHAR(20) NULL                  -- 등록 번호가 없는 분이 요청 때 적은 번호
 ) ENGINE=InnoDB;
 
 -- 임시 비밀번호(사회복지사가 만든 것)로 로그인하면 새 비밀번호를 직접 정하게 함
@@ -77,3 +78,4 @@ CREATE TABLE IF NOT EXISTS pw_temp (
 -- (기존 DB) 성별·연락처 컬럼 추가 — 앱이 처음 저장할 때 자동으로도 추가함
 -- ALTER TABLE profiles ADD COLUMN gender VARCHAR(10) NULL;
 -- ALTER TABLE profiles ADD COLUMN phone  VARCHAR(20) NULL;
+-- ALTER TABLE profiles ADD COLUMN contact_phone VARCHAR(20) NULL;  -- 필요할 때 연락할 번호
