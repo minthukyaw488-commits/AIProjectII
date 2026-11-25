@@ -19,7 +19,7 @@ import os
 import threading
 
 _PROFILE_KEYS = ("age", "income_low", "district", "living_alone", "gender", "phone",
-                 "mobility_issue", "chronic_illness")
+                 "contact_phone", "mobility_issue", "chronic_illness")
 _BOOL_KEYS = ("income_low", "living_alone", "mobility_issue", "chronic_illness")
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -268,7 +268,8 @@ _PW_TABLES_SQL = (
     """CREATE TABLE IF NOT EXISTS pw_requests (
   name         VARCHAR(100) PRIMARY KEY,
   requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  issued_at    TIMESTAMP NULL
+  issued_at    TIMESTAMP NULL,
+  req_phone    VARCHAR(20) NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS pw_temp (
   name       VARCHAR(100) PRIMARY KEY,
@@ -280,6 +281,10 @@ _PW_TABLES_SQL = (
 def _ensure_pw_tables(cur):
     for q in _PW_TABLES_SQL:
         cur.execute(q)
+    try:                                         # 예전에 만든 표에는 req_phone 이 없을 수 있음
+        cur.execute("ALTER TABLE pw_requests ADD COLUMN req_phone VARCHAR(20) NULL")
+    except Exception:                            # noqa: BLE001 — 이미 있으면 통과
+        pass
 
 
 def _now() -> str:
@@ -293,8 +298,9 @@ def _load_reqs() -> dict:
     return {k: (v if isinstance(v, dict) else {"at": v, "issued": None}) for k, v in raw.items()}
 
 
-def add_pw_request(name: str):
+def add_pw_request(name: str, req_phone: str | None = None):
     """어르신이 '사회복지사에게 알리기'를 누름. 같은 분이 여러 번 눌러도 1건(시각만 갱신).
+    req_phone: 등록된 번호가 없는 분이 요청할 때 적은 연락 번호(본인 확인 필요 표시용).
     (ok, msg) — 가입하지 않은 성함이면 False."""
     if not name:
         return False, "먼저 '성함' 칸에 이름을 적어 주세요."
@@ -306,35 +312,37 @@ def add_pw_request(name: str):
             try:
                 with c.cursor() as cur:
                     _ensure_pw_tables(cur)
-                    cur.execute("REPLACE INTO pw_requests (name) VALUES (%s)", (name,))
+                    cur.execute("REPLACE INTO pw_requests (name, req_phone) VALUES (%s,%s)",
+                                (name, req_phone))
                 return True, "ok"
             finally:
                 c.close()
         reqs = _load_reqs()
-        reqs[name] = {"at": _now(), "issued": None}
+        reqs[name] = {"at": _now(), "issued": None, "req_phone": req_phone}
         _save_json(_PWREQ_JSON, reqs)
         return True, "ok"
 
 
-def list_pw_requests() -> list[tuple[str, str, str | None]]:
-    """처리 안 된 비밀번호 요청 [(성함, 요청시각, 임시비번 보낸 시각|None)] — 최근 순.
-    시각은 'YYYY-MM-DDTHH:MM'."""
+def list_pw_requests() -> list[tuple[str, str, str | None, str | None]]:
+    """처리 안 된 비밀번호 요청 [(성함, 요청시각, 임시비번 보낸 시각|None, 요청 때 적은 번호|None)]
+    — 최근 순. 시각은 'YYYY-MM-DDTHH:MM'."""
     with _lock:
         c = _conn()
         if c:
             try:
                 with c.cursor() as cur:
                     _ensure_pw_tables(cur)
-                    cur.execute("SELECT name, requested_at, issued_at FROM pw_requests "
-                                "ORDER BY requested_at DESC")
+                    cur.execute("SELECT name, requested_at, issued_at, req_phone "
+                                "FROM pw_requests ORDER BY requested_at DESC")
                     return [(r["name"], r["requested_at"].isoformat(timespec="minutes"),
                              r["issued_at"].isoformat(timespec="minutes")
-                             if r["issued_at"] else None)
+                             if r["issued_at"] else None, r.get("req_phone"))
                             for r in cur.fetchall()]
             finally:
                 c.close()
         reqs = _load_reqs()
-        return sorted(((k, v["at"], v.get("issued")) for k, v in reqs.items()),
+        return sorted(((k, v["at"], v.get("issued"), v.get("req_phone"))
+                       for k, v in reqs.items()),
                       key=lambda t: t[1], reverse=True)
 
 
@@ -364,7 +372,8 @@ def _ensure_profile_columns(cur):
     global _PROFILE_COLS_OK
     if _PROFILE_COLS_OK:
         return
-    for col, typ in (("gender", "VARCHAR(10)"), ("phone", "VARCHAR(20)")):
+    for col, typ in (("gender", "VARCHAR(10)"), ("phone", "VARCHAR(20)"),
+                     ("contact_phone", "VARCHAR(20)")):
         try:
             cur.execute(f"ALTER TABLE profiles ADD COLUMN {col} {typ} NULL")
         except Exception:                        # noqa: BLE001 — 이미 있으면 통과
@@ -387,6 +396,7 @@ def get_profile(name: str):
                         return None
                     return {"age": row["age"], "district": row["district"],
                             "gender": row.get("gender"), "phone": row.get("phone"),
+                            "contact_phone": row.get("contact_phone"),
                             **{k: _i2b(row[k]) for k in _BOOL_KEYS}}
             finally:
                 c.close()
@@ -405,13 +415,14 @@ def save_profile(name: str, profile: dict):
                     cur.execute(
                         "REPLACE INTO profiles "
                         "(user_id, age, income_low, district, living_alone, "
-                        " mobility_issue, chronic_illness, gender, phone) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        " mobility_issue, chronic_illness, gender, phone, contact_phone) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (uid, profile.get("age"), _b2i(profile.get("income_low")),
                          profile.get("district"), _b2i(profile.get("living_alone")),
                          _b2i(profile.get("mobility_issue")),
                          _b2i(profile.get("chronic_illness")),
-                         profile.get("gender"), profile.get("phone")))
+                         profile.get("gender"), profile.get("phone"),
+                         profile.get("contact_phone")))
                 return
             finally:
                 c.close()
