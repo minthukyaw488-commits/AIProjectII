@@ -408,6 +408,15 @@ def inject_css():
         margin:-4px 2px 2px; font-size:.84rem; color:{muted}}}
       .cite .src{{background:{surface}; border:1px solid {card_bd}; border-radius:8px;
         padding:3px 9px; color:{navy}; font-weight:600; font-size:.8rem}}
+      /* 답변 신뢰 표시 — 자료 근거 있음(초록) / 자료에서 확인되지 않음(주황) */
+      .trust{{display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center;
+        margin:2px 2px 8px; padding:9px 13px; border-radius:12px; font-size:.95rem;
+        line-height:1.45; max-width:100%}}
+      .trust b{{font-weight:800; white-space:nowrap}}
+      .trust.ok{{background:#e9f6ee; border:1.5px solid #2f9e5a; color:#14532d}}
+      .trust.warn{{background:#fff3e6; border:1.5px solid #e8590c; color:#7c2d12}}
+      .trust .src{{background:#fff; border:1px solid {card_bd}; border-radius:8px;
+        padding:2px 8px; color:{navy}; font-weight:600; font-size:.8rem}}
       /* (2) 통증·위기 표현 시 빨간 경고 배너 */
       .warn-banner{{display:flex; gap:13px; align-items:center; margin:10px 0 4px;
         background:#fdecec; border:1px solid #f3b4b4; border-left:5px solid #d93025;
@@ -753,6 +762,52 @@ def _cite_html(sources) -> str:
     return f'<div class="row l"><div class="cite">📄 근거 {chips}</div></div>'
 
 
+# 답변이 '자료에서 확인되지 않음'일 때 나오는 문구(파이프라인 고정 답변·LLM 규칙 2·8)
+_NOT_FOUND_MARKS = ("확인되지 않", "정확히 알려드리기 어렵", "찾을 수 없")
+_REFER_ONLY = "주민센터(행정복지센터)에 문의하시면 자세히 안내받으실 수 있습니다"
+
+
+def _trust_kind(answer: str, sources) -> str | None:
+    """답변 신뢰 표시 종류.
+    'ok'      — 자료(근거 문서)에 근거한 답변
+    'partial' — 자료 근거가 있지만 일부는 자료에서 확인되지 않음
+    'none'    — 자료에서 확인되지 않음(주민센터·129 확인 안내)
+    None      — 표시 안 함(인사말·위기 안내처럼 복지 정보 답변이 아닌 경우)"""
+    a = (answer or "").strip()
+    if not a or a == CRISIS_REPLY.strip():
+        return None
+    if _REFER_ONLY in a and len(a) < 90:          # 규칙 2: 안내 문장 한 줄뿐 = 자료에 없음
+        return "none"
+    refused = any(k in a for k in _NOT_FOUND_MARKS)
+    if sources:
+        return "partial" if refused else "ok"
+    return "none" if refused else None
+
+
+def _trust_html(answer: str, sources) -> str:
+    """답변 아래 신뢰 표시(어르신이 한눈에 '믿어도 되는 답인지' 알 수 있게)."""
+    kind = _trust_kind(answer, sources)
+    if kind is None:
+        return ""
+    if kind == "none":
+        return ('<div class="trust warn">⚠️ <b>자료에서 확인되지 않음</b>'
+                '<span>주민센터(행정복지센터)나 ☎129에 꼭 확인해 주세요.</span></div>')
+    import html as _html
+    import os
+    seen, names = set(), []
+    for s in sources:
+        n = os.path.splitext(os.path.basename(str(s)))[0].strip()
+        if n and n not in seen:
+            seen.add(n)
+            names.append(n)
+    chips = "".join(f'<span class="src">{_html.escape(n)}</span>' for n in names[:3])
+    if kind == "partial":
+        return ('<div class="trust warn">⚠️ <b>일부는 자료에서 확인되지 않음</b>'
+                '<span>확인된 부분의 근거:</span>' + chips +
+                '<span>나머지는 주민센터·☎129에 확인해 주세요.</span></div>')
+    return '<div class="trust ok">📄 <b>자료 근거 있음</b>' + chips + '</div>'
+
+
 def _chat_html(messages, limit: int = 8) -> str:
     """채팅 내역 → 말풍선 HTML. 봇 답변 아래에 근거 출처 칩을 붙인다."""
     import html as _html
@@ -764,7 +819,7 @@ def _chat_html(messages, limit: int = 8) -> str:
         else:
             rows += (f'<div class="row l"><div class="bub bot">'
                      f'{_html.escape(m[1])}</div></div>')
-            rows += _cite_html(m[3] if len(m) > 3 else [])   # (1) 근거 출처
+            rows += _trust_html(m[1], m[3] if len(m) > 3 else [])   # 신뢰 표시 + 근거
     return f'<div class="chat">{rows}</div>'
 
 
@@ -1029,9 +1084,9 @@ def _render_history(messages):
     for i, m in enumerate(messages):
         _bubble(m[0], m[1])
         if m[0] == "bot":
-            cap = _source_caption(m[3] if len(m) > 3 else [])
-            if cap:
-                st.caption(cap)
+            badge = _trust_html(m[1], m[3] if len(m) > 3 else [])   # 신뢰 표시 + 근거
+            if badge:
+                st.markdown(badge, unsafe_allow_html=True)
             uq = messages[i - 1][1] if i > 0 and messages[i - 1][0] == "user" else ""
             _answer_actions(i, uq, m[1])
 
@@ -1053,9 +1108,9 @@ def ask_and_stream(client, q: str, attach: str | None = None):
     _record_signal(q, r)        # 이상신호 기록(키워드+대화분석 합쳐 메시지당 1건)
     st.markdown('<div class="bub-label">복지 도우미</div>', unsafe_allow_html=True)
     st.write_stream(_stream_tokens(r["answer"]))          # (1) 토큰 스트리밍
-    cap = _source_caption(r.get("sources"))
-    if cap:
-        st.caption(cap)                                   # (2) 📚 Source: xxx.pdf
+    badge = _trust_html(r["answer"], r.get("sources"))    # (2) 신뢰 표시 + 근거
+    if badge:
+        st.markdown(badge, unsafe_allow_html=True)
     st.session_state["chat"].append(("user", q))
     st.session_state["chat"].append(("bot", r["answer"], None, r.get("sources") or []))
 
