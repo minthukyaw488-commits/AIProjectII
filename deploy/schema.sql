@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   living_alone    TINYINT  NULL,
   mobility_issue  TINYINT  NULL,
   chronic_illness TINYINT  NULL,
+  gender          VARCHAR(10) NULL,             -- 남성/여성 (선택)
+  phone           VARCHAR(20) NULL,             -- 연락처 (선택, 개인정보)
   updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
@@ -71,3 +73,7 @@ CREATE TABLE IF NOT EXISTS pw_temp (
   name       VARCHAR(100) PRIMARY KEY,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+-- (기존 DB) 성별·연락처 컬럼 추가 — 앱이 처음 저장할 때 자동으로도 추가함
+-- ALTER TABLE profiles ADD COLUMN gender VARCHAR(10) NULL;
+-- ALTER TABLE profiles ADD COLUMN phone  VARCHAR(20) NULL;

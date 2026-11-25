@@ -18,7 +18,7 @@ import json
 import os
 import threading
 
-_PROFILE_KEYS = ("age", "income_low", "district", "living_alone",
+_PROFILE_KEYS = ("age", "income_low", "district", "living_alone", "gender", "phone",
                  "mobility_issue", "chronic_illness")
 _BOOL_KEYS = ("income_low", "living_alone", "mobility_issue", "chronic_illness")
 
@@ -356,6 +356,22 @@ def close_pw_request(name: str):
 
 
 # ── 공개 API (앱이 쓰는 함수) ─────────────────────────────────────────
+_PROFILE_COLS_OK = False
+
+
+def _ensure_profile_columns(cur):
+    """예전 서버 DB(profiles 에 gender·phone 컬럼 없음)도 그대로 쓰도록 한 번만 컬럼을 추가."""
+    global _PROFILE_COLS_OK
+    if _PROFILE_COLS_OK:
+        return
+    for col, typ in (("gender", "VARCHAR(10)"), ("phone", "VARCHAR(20)")):
+        try:
+            cur.execute(f"ALTER TABLE profiles ADD COLUMN {col} {typ} NULL")
+        except Exception:                        # noqa: BLE001 — 이미 있으면 통과
+            pass
+    _PROFILE_COLS_OK = True
+
+
 def get_profile(name: str):
     """사용자 프로필(dict) 또는 None."""
     with _lock:
@@ -370,6 +386,7 @@ def get_profile(name: str):
                     if not row:
                         return None
                     return {"age": row["age"], "district": row["district"],
+                            "gender": row.get("gender"), "phone": row.get("phone"),
                             **{k: _i2b(row[k]) for k in _BOOL_KEYS}}
             finally:
                 c.close()
@@ -383,16 +400,18 @@ def save_profile(name: str, profile: dict):
         if c:
             try:
                 with c.cursor() as cur:
+                    _ensure_profile_columns(cur)
                     uid = _user_id(cur, name)
                     cur.execute(
                         "REPLACE INTO profiles "
                         "(user_id, age, income_low, district, living_alone, "
-                        " mobility_issue, chronic_illness) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                        " mobility_issue, chronic_illness, gender, phone) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (uid, profile.get("age"), _b2i(profile.get("income_low")),
                          profile.get("district"), _b2i(profile.get("living_alone")),
                          _b2i(profile.get("mobility_issue")),
-                         _b2i(profile.get("chronic_illness"))))
+                         _b2i(profile.get("chronic_illness")),
+                         profile.get("gender"), profile.get("phone")))
                 return
             finally:
                 c.close()
